@@ -3,7 +3,6 @@ from flask_cors import CORS
 
 from app.core.logging import setup_logging
 from app.infrastructure.database import init_db
-from app.api.routes import api_bp
 
 
 def create_app():
@@ -18,6 +17,7 @@ def create_app():
     CORS(app)
 
     # Register blueprint with /api prefix
+    from app.api.routes import api_bp
     app.register_blueprint(api_bp, url_prefix="/api")
 
     return app

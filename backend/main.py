@@ -1,6 +1,14 @@
+import os
 import logging
-from waitress import serve
 
+# Override Hugging Face cache directory to bypass Windows Home directory permission lock errors
+base_dir = os.path.dirname(os.path.abspath(__file__))
+cache_dir = os.path.join(base_dir, "data", ".cache")
+os.makedirs(cache_dir, exist_ok=True)
+os.environ["HF_HOME"] = cache_dir
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = cache_dir
+
+from waitress import serve
 from app import create_app
 from app.core.config import settings
 
