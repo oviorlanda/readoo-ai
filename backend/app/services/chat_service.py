@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, Generator
 
 from app.core.config import settings
-from app.infrastructure.database import get_db_connection
+from app.repositories import ChatRepository, SettingsRepository, CollectionRepository
 from app.infrastructure.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -18,83 +18,37 @@ class ChatService:
 
     def _get_settings(self) -> dict:
         """Get dynamic settings from database."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT key, value FROM settings WHERE key IN ('assistant_name', 'greeting_message', 'system_prompt')"
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        return {r["key"]: r["value"] for r in rows}
+        return SettingsRepository.get_settings_by_keys(["assistant_name", "greeting_message", "system_prompt"])
 
     def _get_llm_settings(self) -> dict:
         """Get LLM settings from database."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT key, value FROM settings WHERE key IN ('llm_provider', 'llm_model', 'llm_api_key', 'llm_max_tokens', 'llm_temperature')"
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        return {r["key"]: r["value"] for r in rows}
+        return SettingsRepository.get_settings_by_keys(["llm_provider", "llm_model", "llm_api_key", "llm_max_tokens", "llm_temperature"])
 
     def _get_chat_history(self, session_id: str, user_id: int, max_turns: int = 2) -> list[dict]:
         """Get chat history from database."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """SELECT role, content FROM chat_history 
-               WHERE session_id = ? AND user_id = ? 
-               ORDER BY id ASC""",
-            (session_id, user_id)
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        
+        rows = ChatRepository.get_chat_messages(session_id, user_id)
         # Only return last N turns
         history = [{"role": r["role"], "content": r["content"]} for r in rows]
         return history[-(max_turns * 2):]
 
     def _save_chat_message(self, user_id: int, role: str, content: str, session_id: str) -> None:
         """Save chat message to database."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
         now = datetime.now().isoformat()
-        cursor.execute(
-            "INSERT INTO chat_history (user_id, role, content, session_id, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, role, content, session_id, now)
-        )
-        conn.commit()
-        conn.close()
+        ChatRepository.create_chat_message(user_id, role, content, session_id, now)
 
     def _create_or_get_session(self, user_id: int, session_id: Optional[str] = None) -> str:
         """Create a new session or return existing one."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
         now = datetime.now().isoformat()
         
         if session_id:
-            cursor.execute(
-                "SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?",
-                (session_id, user_id)
-            )
-            if cursor.fetchone():
-                cursor.execute(
-                    "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
-                    (now, session_id)
-                )
-                conn.commit()
-                conn.close()
+            row = ChatRepository.get_chat_session(session_id, user_id)
+            if row:
+                ChatRepository.update_chat_session_timestamp(session_id, now)
                 return session_id
         
         # Create new session
         new_id = uuid.uuid4().hex[:12]
-        cursor.execute(
-            "INSERT INTO chat_sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (new_id, user_id, "Chat Baru", now, now)
-        )
-        conn.commit()
-        conn.close()
+        ChatRepository.create_chat_session(new_id, user_id, "Chat Baru", now, now)
         return new_id
 
     def _search_and_rerank(self, query: str) -> tuple[list[dict], list[str]]:
@@ -103,15 +57,7 @@ class ChatService:
         reranked = self.vector_store.rerank(query, retrieved, top_k=5)
 
         # Get display columns
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT display_cols FROM collections WHERE id = ?",
-            (self.vector_store.active_collection_id,)
-        )
-        col_row = cursor.fetchone()
-        conn.close()
-
+        col_row = CollectionRepository.get_collection(self.vector_store.active_collection_id)
         display_cols = json.loads(col_row["display_cols"]) if col_row else []
         return reranked, display_cols
 
@@ -400,35 +346,14 @@ class ChatService:
 
     def get_user_sessions(self, user_id: int) -> list[dict]:
         """Get all chat sessions for a user."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """SELECT id, title, created_at, updated_at FROM chat_sessions 
-               WHERE user_id = ? ORDER BY updated_at DESC""",
-            (user_id,)
-        )
-        rows = cursor.fetchall()
-        conn.close()
+        rows = ChatRepository.get_chat_sessions_by_user(user_id)
         return [dict(r) for r in rows]
 
     def get_session_messages(self, session_id: str, user_id: int) -> list[dict]:
         """Get all messages in a session."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """SELECT role, content, created_at FROM chat_history 
-               WHERE session_id = ? AND user_id = ? ORDER BY id ASC""",
-            (session_id, user_id)
-        )
-        rows = cursor.fetchall()
-        conn.close()
+        rows = ChatRepository.get_chat_messages(session_id, user_id)
         return [dict(r) for r in rows]
 
     def delete_session(self, session_id: str, user_id: int) -> None:
         """Delete a chat session and its messages."""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM chat_history WHERE session_id = ? AND user_id = ?", (session_id, user_id))
-        cursor.execute("DELETE FROM chat_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
-        conn.commit()
-        conn.close()
+        ChatRepository.delete_chat_session(session_id, user_id)

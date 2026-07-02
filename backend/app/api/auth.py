@@ -1,11 +1,11 @@
 import secrets
 import datetime
 import logging
-import sqlite3
 from flask import request, jsonify
 
 from app.api import api_bp
-from app.infrastructure.database import get_db_connection
+from app.repositories.user_repository import UserRepository
+from app.repositories.session_repository import SessionRepository
 from app.core.security import hash_password, check_password
 from app.core.validators import RegisterRequest, LoginRequest
 
@@ -23,19 +23,10 @@ def auth_register():
 
     hashed = hash_password(data.password)
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "INSERT INTO users (nama_lengkap, email, password_hash, role) VALUES (?, ?, ?, 'user')",
-            (data.nama_lengkap, data.email, hashed)
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.close()
+    success = UserRepository.create_user(data.nama_lengkap, data.email, hashed, "user")
+    if not success:
         return jsonify({"error": "Email sudah terdaftar"}), 400
 
-    conn.close()
     return jsonify({"success": True, "message": "Pendaftaran berhasil"}), 201
 
 
@@ -48,26 +39,14 @@ def auth_login():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, nama_lengkap, password_hash, role FROM users WHERE email = ?",
-        (data.email,)
-    )
-    user = cursor.fetchone()
+    user = UserRepository.get_user_by_email(data.email)
 
     if not user or not check_password(data.password, user["password_hash"]):
-        conn.close()
         return jsonify({"error": "Email atau password salah"}), 401
 
     token = secrets.token_hex(32)
     now = datetime.datetime.now().isoformat()
-    cursor.execute(
-        "INSERT INTO sessions (token, user_id, role, created_at) VALUES (?, ?, ?, ?)",
-        (token, user["id"], user["role"], now)
-    )
-    conn.commit()
-    conn.close()
+    SessionRepository.create_session(token, user["id"], user["role"], now)
 
     return jsonify({
         "token": token,
@@ -78,15 +57,12 @@ def auth_login():
 
 @api_bp.route("/auth/logout", methods=["POST"])
 def auth_logout():
-    from app.api.middleware import require_auth
     auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Token otorisasi diperlukan"}), 401
     token = auth_header.split(" ")[1]
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
-    conn.commit()
-    conn.close()
+    SessionRepository.delete_session(token)
     
     return jsonify({"success": True})
 
@@ -99,11 +75,7 @@ def auth_forgot_password():
     if not email:
         return jsonify({"error": "Email wajib diisi"}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
-    conn.close()
+    user = UserRepository.get_user_by_email(email)
 
     if user:
         reset_token = secrets.token_hex(16)

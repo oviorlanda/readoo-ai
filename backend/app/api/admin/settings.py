@@ -3,7 +3,10 @@ from flask import request, jsonify
 
 from app.api import api_bp
 from app.api.middleware import require_auth
-from app.infrastructure.database import get_db_connection
+from app.repositories.user_repository import UserRepository
+from app.repositories.session_repository import SessionRepository
+from app.repositories.settings_repository import SettingsRepository
+from app.repositories.collection_repository import CollectionRepository
 from app.core.security import encrypt_api_key
 
 logger = logging.getLogger(__name__)
@@ -12,13 +15,7 @@ logger = logging.getLogger(__name__)
 @api_bp.route("/admin/settings", methods=["GET"])
 @require_auth(role="admin")
 def admin_get_settings():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM settings")
-    rows = cursor.fetchall()
-    conn.close()
-
-    sett = {r["key"]: r["value"] for r in rows}
+    sett = SettingsRepository.get_all_settings()
     
     # Mask API key for security
     api_key = sett.get("llm_api_key", "")
@@ -33,20 +30,18 @@ def admin_get_settings():
 def admin_save_settings():
     payload = request.get_json(silent=True) or {}
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
+    updates = {}
     for key, value in payload.items():
         if key == "llm_api_key":
             if value == "********":
                 continue  # Skip overwriting masked key
             else:
                 value = encrypt_api_key(value)
+        updates[key] = str(value)
                 
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+    if updates:
+        SettingsRepository.save_settings(updates)
         
-    conn.commit()
-    conn.close()
     return jsonify({"success": True})
 
 
@@ -64,11 +59,8 @@ def admin_health_check():
     
     # Database check
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) as cnt FROM settings")
-        health["checks"]["database"] = {"status": "ok", "settings_count": cursor.fetchone()["cnt"]}
-        conn.close()
+        settings_dict = SettingsRepository.get_all_settings()
+        health["checks"]["database"] = {"status": "ok", "settings_count": len(settings_dict)}
     except Exception as e:
         health["checks"]["database"] = {"status": "error", "error": str(e)}
         health["status"] = "degraded"
@@ -93,13 +85,7 @@ def admin_health_check():
 @require_auth(role="admin")
 def admin_get_users():
     """Get all users for management."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, nama_lengkap, email, role FROM users ORDER BY id ASC"
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    rows = UserRepository.get_all_users()
     
     users = []
     for r in rows:
@@ -117,17 +103,9 @@ def admin_get_users():
 @require_auth(role="admin")
 def admin_delete_user(user_id):
     """Delete a user."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-    if not cursor.fetchone():
-        conn.close()
+    success = UserRepository.delete_user(user_id)
+    if not success:
         return jsonify({"error": "User not found"}), 404
-    
-    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
-    conn.close()
     
     return jsonify({"success": True})
 
@@ -142,16 +120,9 @@ def admin_update_user_role(user_id):
     if new_role not in ("user", "admin"):
         return jsonify({"error": "Role must be 'user' or 'admin'"}), 400
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-    if not cursor.fetchone():
-        conn.close()
+    success = UserRepository.update_user_role(user_id, new_role)
+    if not success:
         return jsonify({"error": "User not found"}), 404
-    
-    cursor.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
-    conn.commit()
-    conn.close()
     
     return jsonify({"success": True})
 
@@ -160,30 +131,20 @@ def admin_update_user_role(user_id):
 @require_auth(role="admin")
 def admin_get_stats():
     """Get system statistics for admin dashboard."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT COUNT(*) as cnt FROM users")
-    total_users = cursor.fetchone()["cnt"]
-    
-    cursor.execute("SELECT COUNT(*) as cnt FROM collections")
-    total_collections = cursor.fetchone()["cnt"]
-    
-    cursor.execute("SELECT COUNT(*) as cnt FROM documents")
-    total_documents = cursor.fetchone()["cnt"]
-    
-    cursor.execute("SELECT COUNT(*) as cnt FROM sessions")
-    active_sessions = cursor.fetchone()["cnt"]
-    
-    cursor.execute("SELECT name, doc_count FROM (SELECT c.name, COUNT(d.id) as doc_count FROM collections c LEFT JOIN documents d ON c.id = d.collection_id GROUP BY c.id) ORDER BY doc_count DESC")
-    collection_stats = cursor.fetchall()
-    
-    conn.close()
-    
-    return jsonify({
-        "total_users": total_users,
-        "total_collections": total_collections,
-        "total_documents": total_documents,
-        "active_sessions": active_sessions,
-        "collections": [{"name": r["name"], "document_count": r["doc_count"]} for r in collection_stats]
-    })
+    try:
+        users = UserRepository.get_all_users()
+        total_users = len(users)
+        
+        col_stats = CollectionRepository.get_stats()
+        active_sessions = SessionRepository.get_active_session_count()
+        
+        return jsonify({
+            "total_users": total_users,
+            "total_collections": col_stats["total_collections"],
+            "total_documents": col_stats["total_documents"],
+            "active_sessions": active_sessions,
+            "collections": col_stats["collections"]
+        })
+    except Exception as e:
+        logger.exception("Failed to get stats")
+        return jsonify({"error": str(e)}), 500

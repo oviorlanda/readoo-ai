@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `routes.py` → dihapus, diganti modul modular
-- `frontend/` (HTML statis) → diganti `frontend-react/` (React SPA)
+- `frontend/` (HTML statis) → diganti `frontend/` (React SPA)
 - `docker-compose.yml` — tambah service Redis
 - `app/__init__.py` — tambah global error handlers (404, 405, 500)
 

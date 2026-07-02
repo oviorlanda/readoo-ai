@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend-react
+    build: ./frontend
     container_name: readoo-frontend
     ports:
       - "3000:3000"

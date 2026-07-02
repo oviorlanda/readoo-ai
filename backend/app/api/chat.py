@@ -106,16 +106,9 @@ def update_session_title(session_id):
     if not title:
         return jsonify({"error": "Title is required"}), 400
     
-    from app.infrastructure.database import get_db_connection
+    from app.repositories.chat_repository import ChatRepository
     from datetime import datetime
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-        (title, datetime.now().isoformat(), session_id, g.user_id)
-    )
-    conn.commit()
-    conn.close()
+    ChatRepository.update_chat_session_title(session_id, g.user_id, title, datetime.now().isoformat())
     
     return jsonify({"success": True})

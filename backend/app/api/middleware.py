@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Callable
 from flask import request, jsonify, g
 
-from app.infrastructure.database import get_db_connection
+from app.repositories.session_repository import SessionRepository
 from app.infrastructure.cache import is_rate_limited, cache_session, get_cached_session, delete_cached_session
 
 logger = logging.getLogger(__name__)
@@ -31,14 +31,7 @@ def require_auth(role: Optional[str] = None) -> Callable:
                 return f(*args, **kwargs)
             
             # Fallback to database
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT user_id, role FROM sessions WHERE token = ?",
-                (token,)
-            )
-            session = cursor.fetchone()
-            conn.close()
+            session = SessionRepository.get_session(token)
 
             if not session:
                 return jsonify({"error": "Sesi tidak valid atau telah kedaluwarsa"}), 401

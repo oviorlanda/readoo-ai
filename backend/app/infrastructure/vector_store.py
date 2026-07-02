@@ -10,7 +10,7 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from app.core.config import settings
-from app.infrastructure.database import get_db_connection
+from app.repositories.collection_repository import CollectionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +37,7 @@ class VectorStore:
         self.load_active_collection()
 
     def load_active_collection(self):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM collections WHERE active = 1 LIMIT 1")
-        row = cursor.fetchone()
-        conn.close()
+        row = CollectionRepository.get_active_collection()
 
         if row:
             col_id = row["id"]
@@ -63,11 +59,7 @@ class VectorStore:
             self.active_collection_id = None
 
     def rebuild_index(self, collection_id):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, content FROM documents WHERE collection_id = ?", (collection_id,))
-        rows = cursor.fetchall()
-        conn.close()
+        rows = CollectionRepository.get_documents_by_collection(collection_id)
 
         if not rows:
             logger.warning("No documents found for collection %d. Clearing index.", collection_id)
@@ -98,11 +90,7 @@ class VectorStore:
         faiss.write_index(index, index_path)
         
         # Reload if active
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT active FROM collections WHERE id = ?", (collection_id,))
-        active_row = cursor.fetchone()
-        conn.close()
+        active_row = CollectionRepository.get_collection(collection_id)
 
         if active_row and active_row["active"] == 1:
             self.index = index
@@ -196,15 +184,7 @@ class VectorStore:
             matched_ids = [int(i) for i in ids[0] if i != -1]
             if matched_ids:
                 # Fetch matching documents from SQLite
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                placeholders = ",".join("?" for _ in matched_ids)
-                cursor.execute(
-                    f"SELECT id, metadata, content FROM documents WHERE id IN ({placeholders})",
-                    matched_ids
-                )
-                rows = cursor.fetchall()
-                conn.close()
+                rows = CollectionRepository.get_documents_by_ids(matched_ids)
 
                 # Sort documents to match FAISS ranking order
                 doc_map = {r["id"]: r for r in rows}
@@ -217,14 +197,7 @@ class VectorStore:
                         semantic_results.append(meta)
 
         # 2. Keyword search (BM25)
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, metadata, content FROM documents WHERE collection_id = ?",
-            (self.active_collection_id,)
-        )
-        rows = cursor.fetchall()
-        conn.close()
+        rows = CollectionRepository.get_documents_by_collection(self.active_collection_id)
 
         candidates = []
         for r in rows:
@@ -272,22 +245,15 @@ class VectorStore:
         return ranked[:top_k]
 
     def add_collection_from_csv(self, name, embedding_cols, display_cols, df):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Deactivate any previous collections since we set this one active
-        cursor.execute("UPDATE collections SET active = 0")
+        import sqlite3
+        CollectionRepository.deactivate_all_collections()
         
         now = datetime.now().isoformat()
         try:
-            cursor.execute(
-                "INSERT INTO collections (name, embedding_cols, display_cols, active, created_at) VALUES (?, ?, ?, ?, ?)",
-                (name, json.dumps(embedding_cols), json.dumps(display_cols), 1, now)
+            col_id = CollectionRepository.create_collection(
+                name, json.dumps(embedding_cols), json.dumps(display_cols), 1, now
             )
-            col_id = cursor.lastrowid
         except sqlite3.IntegrityError:
-            conn.rollback()
-            conn.close()
             raise ValueError(f"Collection with name '{name}' already exists.")
 
         df.columns = [c.strip() for c in df.columns]
@@ -310,13 +276,7 @@ class VectorStore:
                     val = ""
                 meta[col] = val
 
-            cursor.execute(
-                "INSERT INTO documents (collection_id, content, metadata) VALUES (?, ?, ?)",
-                (col_id, content, json.dumps(meta))
-            )
-
-        conn.commit()
-        conn.close()
+            CollectionRepository.create_document(col_id, content, json.dumps(meta))
 
         # Rebuild FAISS index
         self.rebuild_index(col_id)
@@ -329,16 +289,7 @@ class VectorStore:
         return col_id
 
     def delete_collection(self, collection_id):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT active FROM collections WHERE id = ?", (collection_id,))
-        row = cursor.fetchone()
-        was_active = row and row["active"] == 1
-        
-        cursor.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
-        conn.commit()
-        conn.close()
+        CollectionRepository.delete_collection(collection_id)
 
         # Clean index file
         index_path = os.path.join(self.store_dir, f"collection_{collection_id}.index")
@@ -348,17 +299,4 @@ class VectorStore:
             except Exception:
                 logger.error("Failed to delete index file %s", index_path)
 
-        if was_active:
-            self.index = None
-            self.active_collection_id = None
-            
-            # Activate another collection if exists
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM collections LIMIT 1")
-            other = cursor.fetchone()
-            if other:
-                cursor.execute("UPDATE collections SET active = 1 WHERE id = ?", (other["id"],))
-                conn.commit()
-            conn.close()
-            self.load_active_collection()
+        self.load_active_collection()

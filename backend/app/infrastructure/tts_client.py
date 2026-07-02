@@ -4,7 +4,7 @@ import logging
 import asyncio
 
 from app.core.config import settings
-from app.infrastructure.database import get_db_connection
+from app.repositories.settings_repository import SettingsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +25,7 @@ class TTSClient:
 
     def _load_dynamic_config(self):
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT key, value FROM settings WHERE key IN ('tts_provider', 'tts_voice', 'tts_language')"
-            )
-            rows = cursor.fetchall()
-            conn.close()
-
-            cfg = {r["key"]: r["value"] for r in rows}
+            cfg = SettingsRepository.get_settings_by_keys(["tts_provider", "tts_voice", "tts_language"])
             self.provider = cfg.get("tts_provider", self.provider)
             self.voice = cfg.get("tts_voice", self.voice)
             self.language = cfg.get("tts_language", "id-ID")

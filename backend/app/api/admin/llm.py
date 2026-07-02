@@ -3,7 +3,7 @@ from flask import request, jsonify
 
 from app.api import api_bp
 from app.api.middleware import require_auth
-from app.infrastructure.database import get_db_connection
+from app.repositories.settings_repository import SettingsRepository
 from app.core.security import decrypt_api_key
 from app.core.config import settings
 
@@ -20,14 +20,10 @@ def admin_test_llm_connection():
 
     # Get existing encrypted API key if sent masked
     if api_key == "********":
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'llm_api_key'")
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            api_key = decrypt_api_key(row["value"])
+        cfg = SettingsRepository.get_settings_by_keys(["llm_api_key"])
+        api_key_val = cfg.get("llm_api_key", "")
+        if api_key_val:
+            api_key = decrypt_api_key(api_key_val)
 
     model_string = f"{provider}/{model_name}" if "/" not in model_name else model_name
 
@@ -67,13 +63,10 @@ def admin_detect_models():
     api_key = payload.get("llm_api_key", "").strip()
 
     if api_key == "********":
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'llm_api_key'")
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            api_key = decrypt_api_key(row["value"])
+        cfg = SettingsRepository.get_settings_by_keys(["llm_api_key"])
+        api_key_val = cfg.get("llm_api_key", "")
+        if api_key_val:
+            api_key = decrypt_api_key(api_key_val)
 
     fallback_models = {
         "groq": ["llama-3.1-8b-instant", "llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"],

@@ -93,21 +93,14 @@ def admin_import_dataset():
 @require_auth(role="admin")
 def admin_export_dataset(col_id):
     """Export collection documents as JSON."""
-    from app.infrastructure.database import get_db_connection
+    from app.repositories.collection_repository import CollectionRepository
     import json
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT name FROM collections WHERE id = ?", (col_id,))
-    col = cursor.fetchone()
+    col = CollectionRepository.get_collection(col_id)
     if not col:
-        conn.close()
         return jsonify({"error": "Collection not found"}), 404
     
-    cursor.execute("SELECT metadata FROM documents WHERE collection_id = ?", (col_id,))
-    rows = cursor.fetchall()
-    conn.close()
+    rows = CollectionRepository.get_documents_by_collection(col_id)
     
     documents = [json.loads(r["metadata"]) for r in rows]
     

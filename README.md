@@ -45,7 +45,7 @@ readoo/
 │   │   └── services/           # Business logic (chat, speech)
 │   ├── data/                   # SQLite DB, uploads, voice files, FAISS indices
 │   └── main.py                 # Entry point (Waitress WSGI)
-├── frontend-react/             # React SPA (Vite + TypeScript + Tailwind)
+├── frontend/                   # React SPA (Vite + TypeScript + Tailwind)
 │   ├── src/
 │   │   ├── components/         # Reusable UI components
 │   │   ├── pages/              # Page-level components
@@ -86,7 +86,7 @@ Server berjalan di `http://localhost:5000`
 ### Frontend Setup (Development)
 
 ```bash
-cd frontend-react
+cd frontend
 npm install
 npm run dev
 ```

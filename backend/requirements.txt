@@ -10,7 +10,6 @@ pydantic-settings>=2.0
 
 # Database & Cache
 redis>=5.0
-celery>=5.3
 
 # AI / LLM
 litellm>=1.0
