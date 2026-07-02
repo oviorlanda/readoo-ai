@@ -84,7 +84,9 @@ def init_db():
         ("llm_api_key", ""),  # Encrypted Fernet key
         ("tts_language", "id-ID"),
         ("tts_voice", "id-ID-GadisNeural"),
-        ("tts_provider", "edge-tts")
+        ("tts_provider", "edge-tts"),
+        ("llm_max_tokens", "200"),
+        ("llm_temperature", "0.7")
     ]
     for key, value in default_settings:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))

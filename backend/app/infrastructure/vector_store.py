@@ -111,46 +111,136 @@ class VectorStore:
         else:
             logger.info("FAISS index rebuilt on disk for collection %d", collection_id)
 
-    def search(self, query_text, top_k=5):
-        if self.index is None:
-            logger.warning("Search failed: No active FAISS index loaded.")
-            return []
-
-        # Embed query
-        query_vec = self.encoder.encode([query_text], show_progress_bar=False)
-        query_vec = np.array(query_vec, dtype=np.float32)
-
-        # Search FAISS
-        distances, ids = self.index.search(query_vec, top_k)
+    def _rank_bm25(self, query, documents, k1=1.5, b=0.75):
+        import math
+        from collections import Counter
         
-        # Filter padding IDs (-1)
-        matched_ids = [int(i) for i in ids[0] if i != -1]
-        if not matched_ids:
+        # Tokenize query
+        query_tokens = query.lower().split()
+        if not query_tokens or not documents:
+            return []
+            
+        corpus_size = len(documents)
+        doc_lengths = []
+        doc_term_freqs = []
+        df = Counter()
+        
+        for doc in documents:
+            content = doc.get("_content", "")
+            tokens = content.lower().split()
+            doc_lengths.append(len(tokens))
+            tf = Counter(tokens)
+            doc_term_freqs.append(tf)
+            for term in set(tokens):
+                df[term] += 1
+                
+        avg_dl = sum(doc_lengths) / corpus_size if corpus_size > 0 else 1
+        
+        scored_docs = []
+        for idx, doc in enumerate(documents):
+            score = 0.0
+            dl = doc_lengths[idx]
+            tf = doc_term_freqs[idx]
+            for term in query_tokens:
+                if term in tf:
+                    doc_freq = df[term]
+                    # Log-based IDF with smoothing
+                    idf = math.log((corpus_size - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0)
+                    term_tf = tf[term]
+                    numerator = term_tf * (k1 + 1)
+                    denominator = term_tf + k1 * (1 - b + b * (dl / avg_dl))
+                    score += idf * (numerator / denominator)
+            if score > 0:
+                scored_docs.append((score, doc))
+                
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+        return [doc for score, doc in scored_docs]
+
+    def _reciprocal_rank_fusion(self, semantic_results, keyword_results, k=60):
+        rrf_scores = {}
+        
+        # Add semantic rank scores
+        for rank, doc in enumerate(semantic_results):
+            doc_id = doc["id"]
+            if doc_id not in rrf_scores:
+                rrf_scores[doc_id] = {"doc": doc, "score": 0.0}
+            rrf_scores[doc_id]["score"] += 1.0 / (k + (rank + 1))
+            
+        # Add keyword rank scores
+        for rank, doc in enumerate(keyword_results):
+            doc_id = doc["id"]
+            if doc_id not in rrf_scores:
+                rrf_scores[doc_id] = {"doc": doc, "score": 0.0}
+            rrf_scores[doc_id]["score"] += 1.0 / (k + (rank + 1))
+            
+        # Sort docs by score descending
+        sorted_items = sorted(rrf_scores.values(), key=lambda x: x["score"], reverse=True)
+        return [item["doc"] for item in sorted_items]
+
+    def search(self, query_text, top_k=5):
+        if not self.active_collection_id:
+            logger.warning("Search failed: No active RAG collection loaded.")
             return []
 
-        # Fetch matching documents from SQLite
+        # 1. Semantic search (FAISS)
+        semantic_results = []
+        if self.index is not None:
+            # Embed query
+            query_vec = self.encoder.encode([query_text], show_progress_bar=False)
+            query_vec = np.array(query_vec, dtype=np.float32)
+
+            # Search FAISS
+            distances, ids = self.index.search(query_vec, 20) # get top 20 candidates for fusion
+            
+            # Filter padding IDs (-1)
+            matched_ids = [int(i) for i in ids[0] if i != -1]
+            if matched_ids:
+                # Fetch matching documents from SQLite
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                placeholders = ",".join("?" for _ in matched_ids)
+                cursor.execute(
+                    f"SELECT id, metadata, content FROM documents WHERE id IN ({placeholders})",
+                    matched_ids
+                )
+                rows = cursor.fetchall()
+                conn.close()
+
+                # Sort documents to match FAISS ranking order
+                doc_map = {r["id"]: r for r in rows}
+                for doc_id in matched_ids:
+                    if doc_id in doc_map:
+                        row = doc_map[doc_id]
+                        meta = json.loads(row["metadata"])
+                        meta["id"] = row["id"]
+                        meta["_content"] = row["content"]
+                        semantic_results.append(meta)
+
+        # 2. Keyword search (BM25)
         conn = get_db_connection()
         cursor = conn.cursor()
-        placeholders = ",".join("?" for _ in matched_ids)
         cursor.execute(
-            f"SELECT id, metadata, content FROM documents WHERE id IN ({placeholders})",
-            matched_ids
+            "SELECT id, metadata, content FROM documents WHERE collection_id = ?",
+            (self.active_collection_id,)
         )
         rows = cursor.fetchall()
         conn.close()
 
-        # Sort documents to match FAISS ranking order
-        doc_map = {r["id"]: r for r in rows}
-        ordered_docs = []
-        for doc_id in matched_ids:
-            if doc_id in doc_map:
-                row = doc_map[doc_id]
-                meta = json.loads(row["metadata"])
-                meta["id"] = row["id"]
-                meta["_content"] = row["content"]
-                ordered_docs.append(meta)
+        candidates = []
+        for r in rows:
+            meta = json.loads(r["metadata"])
+            meta["id"] = r["id"]
+            meta["_content"] = r["content"]
+            candidates.append(meta)
 
-        return ordered_docs
+        keyword_results = self._rank_bm25(query_text, candidates)
+        keyword_results = keyword_results[:20] # get top 20 candidates for fusion
+
+        # 3. Reciprocal Rank Fusion (RRF)
+        fused_results = self._reciprocal_rank_fusion(semantic_results, keyword_results, k=60)
+
+        # 4. Limit to top_k before returning
+        return fused_results[:top_k]
 
     def rerank(self, query_text, documents, top_k=5):
         if not self.reranker or not documents:

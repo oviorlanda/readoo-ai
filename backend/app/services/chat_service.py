@@ -161,7 +161,7 @@ class ChatService:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT key, value FROM settings WHERE key IN ('llm_provider', 'llm_model', 'llm_api_key')"
+            "SELECT key, value FROM settings WHERE key IN ('llm_provider', 'llm_model', 'llm_api_key', 'llm_max_tokens', 'llm_temperature')"
         )
         rows = cursor.fetchall()
         conn.close()
@@ -170,6 +170,16 @@ class ChatService:
         provider = cfg.get("llm_provider", "groq").lower()
         model_name = cfg.get("llm_model", "llama3-8b-8192")
         encrypted_key = cfg.get("llm_api_key", "")
+        
+        try:
+            max_tokens = int(cfg.get("llm_max_tokens", 200))
+        except ValueError:
+            max_tokens = 200
+
+        try:
+            temperature = float(cfg.get("llm_temperature", 0.7))
+        except ValueError:
+            temperature = 0.7
         
         # Decrypt API Key
         from app.core.security import decrypt_api_key
@@ -187,6 +197,8 @@ class ChatService:
                     model=model_string,
                     messages=messages,
                     api_base=api_base,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
                     timeout=30
                 )
             else:
@@ -194,6 +206,8 @@ class ChatService:
                     model=model_string,
                     messages=messages,
                     api_key=api_key if api_key else None,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
                     timeout=30
                 )
             return res.choices[0].message.content

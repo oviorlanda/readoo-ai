@@ -394,10 +394,14 @@ async function loadLLMSettings() {
         const data = await res.json();
 
         document.getElementById("select-llm-provider").value = data.llm_provider || "groq";
-        document.getElementById("input-llm-model").value = data.llm_model || "";
         document.getElementById("input-llm-key").value = data.llm_api_key || "";
+        document.getElementById("input-llm-max-tokens").value = data.llm_max_tokens || "200";
+        document.getElementById("input-llm-temperature").value = data.llm_temperature || "0.7";
         
         onLLMProviderChange();
+        
+        // Auto detect and populate models select
+        await detectLLMModels(data.llm_model);
     } catch (e) {
         console.error(e);
     }
@@ -417,6 +421,50 @@ function onLLMProviderChange() {
     
     // Clear status box
     document.getElementById("connection-status-box").style.display = "none";
+    
+    // Refresh models list for new provider
+    detectLLMModels();
+}
+
+async function detectLLMModels(selectedModelValue = null) {
+    const provider = document.getElementById("select-llm-provider").value;
+    const apiKey = document.getElementById("input-llm-key").value;
+    const modelSelect = document.getElementById("select-llm-model");
+    
+    modelSelect.innerHTML = '<option value="">Mendeteksi model...</option>';
+
+    try {
+        const res = await fetch("/api/admin/llm/detect-models", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({ llm_provider: provider, llm_api_key: apiKey })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            modelSelect.innerHTML = "";
+            data.models.forEach(m => {
+                const opt = document.createElement("option");
+                opt.value = m;
+                opt.innerText = m;
+                modelSelect.appendChild(opt);
+            });
+
+            if (selectedModelValue && data.models.includes(selectedModelValue)) {
+                modelSelect.value = selectedModelValue;
+            } else if (data.models.length > 0) {
+                modelSelect.selectedIndex = 0;
+            }
+        } else {
+            modelSelect.innerHTML = '<option value="">Gagal mendeteksi model</option>';
+        }
+    } catch (e) {
+        console.error("Detect models error:", e);
+        modelSelect.innerHTML = '<option value="">Gagal memanggil API model</option>';
+    }
 }
 
 async function testLLMConnection() {
@@ -427,7 +475,7 @@ async function testLLMConnection() {
 
     const payload = {
         llm_provider: document.getElementById("select-llm-provider").value,
-        llm_model: document.getElementById("input-llm-model").value.trim(),
+        llm_model: document.getElementById("select-llm-model").value,
         llm_api_key: document.getElementById("input-llm-key").value
     };
 
@@ -459,8 +507,10 @@ async function testLLMConnection() {
 async function saveLLMSettings(event) {
     event.preventDefault();
     const llm_provider = document.getElementById("select-llm-provider").value;
-    const llm_model = document.getElementById("input-llm-model").value.trim();
+    const llm_model = document.getElementById("select-llm-model").value;
     const llm_api_key = document.getElementById("input-llm-key").value;
+    const llm_max_tokens = document.getElementById("input-llm-max-tokens").value;
+    const llm_temperature = document.getElementById("input-llm-temperature").value;
 
     try {
         const res = await fetch("/api/admin/settings", {
@@ -469,7 +519,7 @@ async function saveLLMSettings(event) {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${token}` 
             },
-            body: JSON.stringify({ llm_provider, llm_model, llm_api_key })
+            body: JSON.stringify({ llm_provider, llm_model, llm_api_key, llm_max_tokens, llm_temperature })
         });
         if (res.ok) {
             alert("Konfigurasi LLM berhasil disimpan!");
@@ -498,12 +548,12 @@ const voiceListMap = {
     },
     "supertonic": {
         "id-ID": [
-            { value: "W1", name: "Style W1 (Female ONNX - Lokal)" },
-            { value: "W2", name: "Style W2 (Female ONNX - Lokal)" },
+            { value: "F1", name: "Style F1 (Female ONNX - Lokal)" },
+            { value: "F2", name: "Style F2 (Female ONNX - Lokal)" },
             { value: "M1", name: "Style M1 (Male ONNX - Lokal)" }
         ],
         "en-US": [
-            { value: "W1", name: "Style W1 (Female ONNX - Lokal)" },
+            { value: "F1", name: "Style F1 (Female ONNX - Lokal)" },
             { value: "M1", name: "Style M1 (Male ONNX - Lokal)" }
         ]
     }
@@ -577,6 +627,52 @@ async function saveTTSSettings(event) {
         }
     } catch (e) {
         console.error(e);
+    }
+}
+
+async function playTTSTest() {
+    const text = document.getElementById("input-tts-test-text").value.trim();
+    const provider = document.getElementById("select-tts-provider").value;
+    const language = document.getElementById("select-tts-lang").value;
+    const voice = document.getElementById("select-tts-voice").value;
+    const statusBox = document.getElementById("tts-test-status");
+    const audioEl = document.getElementById("tts-test-player");
+
+    if (!text) {
+        alert("Teks uji suara tidak boleh kosong.");
+        return;
+    }
+
+    statusBox.style.display = "block";
+    statusBox.style.color = "var(--text-muted)";
+    statusBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menghasilkan suara uji coba...';
+    audioEl.style.display = "none";
+
+    try {
+        const res = await fetch("/api/admin/tts/test", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}` 
+            },
+            body: JSON.stringify({ text, provider, language, voice })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            statusBox.style.color = "green";
+            statusBox.innerHTML = '<i class="fa-solid fa-circle-check"></i> Uji suara siap dimainkan!';
+            audioEl.src = data.audio_url;
+            audioEl.style.display = "block";
+            audioEl.play();
+        } else {
+            statusBox.style.color = "red";
+            statusBox.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Gagal: ${data.error || "Gagal memproses uji suara."}`;
+        }
+    } catch (e) {
+        console.error(e);
+        statusBox.style.color = "red";
+        statusBox.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Koneksi gagal ke server.';
     }
 }
 

@@ -21,3 +21,14 @@ class SpeechService:
             text[:50] + "..." if len(text) > 50 else text,
         )
         return self.tts_client.speak(text)
+
+    def speak_custom(self, text, provider, language, voice):
+        import uuid
+        import os
+        filename = f"tts_test_{uuid.uuid4().hex[:8]}.mp3" if provider == "edge-tts" else f"tts_test_{uuid.uuid4().hex[:8]}.wav"
+        output_path = os.path.join(self.tts_client.output_dir, filename)
+        
+        success = self.tts_client.synthesize_custom(text, output_path, provider, language, voice)
+        if success:
+            return filename
+        return None

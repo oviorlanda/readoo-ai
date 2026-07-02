@@ -53,11 +53,10 @@ class TTSClient:
 
             if hasattr(self, "tts_local"):
                 try:
-                    # Self.voice might be a Supertonic voice like W1, W2, M1, etc.
                     self.style = self.tts_local.get_voice_style(voice_name=self.voice)
                 except Exception:
-                    logger.warning("Voice style %s not found in Supertonic, falling back to W1", self.voice)
-                    self.style = self.tts_local.get_voice_style(voice_name="W1")
+                    logger.warning("Voice style %s not found in Supertonic, falling back to F1", self.voice)
+                    self.style = self.tts_local.get_voice_style(voice_name="F1")
 
         if self.provider == "edge-tts":
             if not hasattr(self, "edge_tts_module"):
@@ -107,3 +106,45 @@ class TTSClient:
             rate=self.rate,
         )
         await communicator.save(output_path)
+
+    def synthesize_custom(self, text, output_path, provider, language, voice):
+        if provider == "supertonic":
+            try:
+                if not hasattr(self, "tts_local"):
+                    from supertonic import TTS
+                    self.tts_local = TTS(auto_download=True)
+                
+                lang_code = language.split("-")[0]
+                try:
+                    style = self.tts_local.get_voice_style(voice_name=voice)
+                except Exception:
+                    style = self.tts_local.get_voice_style(voice_name="F1")
+                
+                wav, duration = self.tts_local.synthesize(text, voice_style=style, lang=lang_code)
+                self.tts_local.save_audio(wav, output_path)
+                return True
+            except Exception as e:
+                logger.error("Custom Supertonic synthesis failed: %s", e)
+                return False
+        else:
+            try:
+                if not hasattr(self, "edge_tts_module"):
+                    import edge_tts
+                    self.edge_tts_module = edge_tts
+                
+                async def run_edge():
+                    comm = self.edge_tts_module.Communicate(text=text, voice=voice, rate=self.rate)
+                    await comm.save(output_path)
+                
+                try:
+                    asyncio.run(run_edge())
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_edge())
+                    loop.close()
+                return True
+            except Exception as e:
+                logger.error("Custom Edge-TTS synthesis failed: %s", e)
+                return False
+
