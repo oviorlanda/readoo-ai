@@ -61,7 +61,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="input-field"
-                placeholder="admin atau user"
+                placeholder="Masukkan email Anda..."
                 required
               />
             </div>
@@ -72,7 +72,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input-field"
-                placeholder="admin atau user"
+                placeholder="Masukkan password Anda..."
                 required
               />
             </div>
@@ -87,9 +87,6 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center space-y-2 text-sm">
-            <p className="text-gray-500 dark:text-gray-400">
-              Demo: <code className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">admin</code> / <code className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">admin</code>
-            </p>
             <div className="flex justify-center gap-4">
               <Link to="/register" className="text-primary-600 hover:text-primary-700 dark:text-primary-400">
                 Daftar

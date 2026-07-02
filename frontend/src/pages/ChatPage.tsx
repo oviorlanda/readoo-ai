@@ -1,19 +1,23 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { chat } from '../services/api';
+import { chat, voice } from '../services/api';
 import type { ChatMessage, ChatSession, ChatItem } from '../types';
 import { Send, LogOut, MessageSquare, Menu } from 'lucide-react';
 import { Sidebar } from '../components/chat/Sidebar';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { ItemCard } from '../components/chat/ItemCard';
 import { AudioRecorder } from '../components/chat/AudioRecorder';
+import { VrmAvatar } from '../components/chat/VrmAvatar';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Button } from '../components/ui/Button';
+
+type ChatMode = 'chat' | 'avatar';
 
 export default function ChatPage() {
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<ChatMode>('chat');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,12 +27,15 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [items, setItems] = useState<ChatItem[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [avatarAnim, setAvatarAnim] = useState<'idle' | 'wave' | 'thinking'>('idle');
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (mode === 'chat') {
+      scrollToBottom();
+    }
+  }, [messages, mode]);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -48,14 +55,10 @@ export default function ChatPage() {
     navigate('/login');
   };
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = input.trim();
-    setInput('');
-    setLoading(true);
-
+  const sendMessageText = async (userMsg: string) => {
     const userMessage: ChatMessage = { role: 'user', content: userMsg };
     setMessages((prev) => [...prev, userMessage]);
+    setLoading(true);
 
     try {
       const eventSource = await chat.streamMessage(userMsg, currentSession || undefined);
@@ -118,6 +121,64 @@ export default function ChatPage() {
     }
   };
 
+  const sendMessageAvatar = async (userMsg: string) => {
+    const userMessage: ChatMessage = { role: 'user', content: userMsg };
+    setMessages((prev) => [...prev, userMessage]);
+    setLoading(true);
+    setAvatarAnim('thinking');
+
+    try {
+      const res = await chat.sendAvatarMessage(userMsg, currentSession || undefined);
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.speech_text }]);
+      
+      if (res.session_id) {
+        setCurrentSession(res.session_id);
+        loadSessions();
+      }
+      if (res.items) {
+        setItems(res.items as ChatItem[]);
+      }
+
+      setAvatarAnim('wave');
+      // Synthesize Speech
+      const ttsRes = await voice.textToSpeech(res.speech_text);
+      if (ttsRes.audio_url) {
+        const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
+        if (audioEl) {
+          audioEl.src = ttsRes.audio_url;
+          audioEl.load();
+          audioEl.play().catch((e) => console.warn('Audio play blocked:', e));
+          
+          audioEl.onended = () => {
+            setAvatarAnim('idle');
+          };
+        }
+      } else {
+        setAvatarAnim('idle');
+      }
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Error: Gagal memproses pesan avatar.' },
+      ]);
+      setAvatarAnim('idle');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+
+    if (mode === 'chat') {
+      await sendMessageText(userMsg);
+    } else {
+      await sendMessageAvatar(userMsg);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -131,6 +192,7 @@ export default function ChatPage() {
       setMessages(msgs as ChatMessage[]);
       setCurrentSession(sessionId);
       setSidebarOpen(false);
+      setItems([]);
     } catch {
       /* ignore */
     }
@@ -154,6 +216,7 @@ export default function ChatPage() {
     setCurrentSession(null);
     setItems([]);
     setSidebarOpen(false);
+    setAvatarAnim('idle');
   };
 
   return (
@@ -169,9 +232,12 @@ export default function ChatPage() {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        {/* Hidden Audio for VRM Lip sync */}
+        <audio id="tts-audio" className="hidden" crossOrigin="anonymous" />
+
         {/* Header */}
-        <header className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-900 flex-shrink-0">
+        <header className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-900 flex-shrink-0 z-20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -182,6 +248,31 @@ export default function ChatPage() {
               </button>
               <h1 className="font-semibold text-gray-900 dark:text-white">Readoo AI</h1>
             </div>
+            
+            {/* Mode Switcher */}
+            <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 border border-gray-200/50 dark:border-gray-700/50 shadow-inner">
+              <button
+                onClick={() => setMode('chat')}
+                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                  mode === 'chat'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Chatting
+              </button>
+              <button
+                onClick={() => setMode('avatar')}
+                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                  mode === 'avatar'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                3D Avatar
+              </button>
+            </div>
+
             <div className="flex items-center gap-2">
               <ThemeToggle />
               {isAdmin && (
@@ -204,58 +295,86 @@ export default function ChatPage() {
           </div>
         </header>
 
-        {/* Chat History Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-          {messages.length === 0 && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-gray-400 dark:text-gray-500">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>Mulai chat dengan Aiko, asisten AI Anda</p>
-              </div>
-            </div>
-          )}
-          {messages.map((msg, i) => (
-            <ChatBubble
-              key={i}
-              message={msg}
-              isStreaming={streaming && i === messages.length - 1}
-            />
-          ))}
-
-          {/* Items display */}
-          {items.length > 0 && messages.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 animate-fade-in">
-              {items.map((item, i) => (
-                <ItemCard key={i} item={item} />
-              ))}
-            </div>
-          )}
-
-          {loading && !streaming && (
-            <div className="flex justify-start">
-              <div className="message-bubble-ai">
-                <div className="flex gap-1">
-                  <div
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '0ms' }}
-                  />
-                  <div
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '150ms' }}
-                  />
-                  <div
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '300ms' }}
-                  />
+        {/* Chatting View */}
+        {mode === 'chat' ? (
+          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+            {messages.length === 0 && (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-400 dark:text-gray-500">
+                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Mulai chat dengan Aiko, asisten AI Anda</p>
                 </div>
               </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+            )}
+            {messages.map((msg, i) => (
+              <ChatBubble
+                key={i}
+                message={msg}
+                isStreaming={streaming && i === messages.length - 1}
+              />
+            ))}
+
+            {/* Items display */}
+            {items.length > 0 && messages.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 animate-fade-in">
+                {items.map((item, i) => (
+                  <ItemCard key={i} item={item} />
+                ))}
+              </div>
+            )}
+
+            {loading && !streaming && (
+              <div className="flex justify-start">
+                <div className="message-bubble-ai">
+                  <div className="flex gap-1">
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: '0ms' }}
+                    />
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: '150ms' }}
+                    />
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: '300ms' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        ) : (
+          /* 3D Avatar View */
+          <div className="flex-1 w-full relative flex items-center justify-center p-4">
+            <VrmAvatar animation={avatarAnim} />
+
+            {/* Float Speech Bubble Overlay */}
+            {messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
+              <div className="absolute top-10 left-1/2 transform -translate-x-1/2 bg-white/95 dark:bg-gray-850/95 shadow-xl rounded-2xl p-4 max-w-md w-full border border-gray-150 dark:border-gray-700 backdrop-blur z-10 transition-all animate-fade-in">
+                <p className="text-xs font-bold text-primary-600 dark:text-primary-400 mb-1">Aiko</p>
+                <p className="text-sm text-gray-800 dark:text-gray-100 leading-relaxed max-h-32 overflow-y-auto">
+                  {messages[messages.length - 1].content}
+                </p>
+              </div>
+            )}
+
+            {/* Recommendations horizontally scrollable container */}
+            {items.length > 0 && messages.length > 0 && (
+              <div className="absolute bottom-6 inset-x-4 overflow-x-auto flex gap-3 p-2 z-10 scrollbar-none snap-x pointer-events-auto">
+                {items.map((item, i) => (
+                  <div key={i} className="flex-shrink-0 w-72 snap-center shadow-lg rounded-xl">
+                    <ItemCard item={item} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Input Form Footer */}
-        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-900 flex-shrink-0">
+        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-900 flex-shrink-0 z-20">
           <div className="flex items-center gap-2 max-w-4xl mx-auto">
             <AudioRecorder
               onTranscribed={(text) => setInput((prev) => prev + ' ' + text)}
