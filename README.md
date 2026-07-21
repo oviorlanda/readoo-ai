@@ -51,35 +51,33 @@ Dibangun di atas arsitektur modern *Full-Stack AI*, Readoo AI memungkinkan bisni
 graph TD
 
     U["👤 Pengguna / Browser"]
+
     N["🌐 NGINX<br/>Frontend Reverse Proxy<br/>React SPA + Proxy /api"]
 
+    F["🐍 Flask Backend<br/>Waitress WSGI"]
+
+    AUTH["Auth API"]
+    CHAT["Chat API"]
+    VOICE["Voice API"]
+
+    RAG["RAG Pipeline<br/>Intent Router → Exact Lookup<br/>FAISS + BM25 + RRF Search<br/>Context Compactor → LLM"]
+
+    SQLITE["SQLite Database<br/>6 Tables"]
+    REDIS["Redis Cache"]
+    ONNX["ONNX Embedder"]
+
     U -->|HTTP / WebSocket / SSE| N
+    N -->|REST API / SSE| F
 
-    subgraph BACKEND["Flask Backend (Waitress WSGI)"]
+    F --> AUTH
+    F --> CHAT
+    F --> VOICE
 
-        AUTH["Auth API"]
-        CHAT["Chat API"]
-        VOICE["Voice API"]
+    CHAT --> RAG
 
-        RAG["RAG Pipeline<br/>Intent Router → Exact Lookup<br/>FAISS + BM25 + RRF Search<br/>Context Compactor → LLM"]
-
-        SQLITE["SQLite Database<br/>6 Tables"]
-        REDIS["Redis Cache"]
-        ONNX["ONNX Embedder"]
-
-        CHAT --> RAG
-
-        AUTH --- SQLITE
-        CHAT --- SQLITE
-        VOICE --- SQLITE
-
-        CHAT --- REDIS
-        CHAT --- ONNX
-    end
-
-    N -->|REST API / SSE| AUTH
-    N -->|REST API / SSE| CHAT
-    N -->|REST API / SSE| VOICE
+    F --> SQLITE
+    F --> REDIS
+    F --> ONNX
 ```
 
 ### Alur Percakapan RAG:
