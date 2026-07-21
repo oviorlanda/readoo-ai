@@ -1,9 +1,14 @@
 import os
 import logging
 import warnings
-
 import requests
-import torch
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
 import whisper
 
 from app.core.config import settings
@@ -14,13 +19,8 @@ warnings.filterwarnings("ignore")
 
 class STTClient:
     def __init__(self):
-        # NOTE: API key untuk cloud STT (Groq) sekarang diambil SECARA DINAMIS
-        # dari database (Admin dashboard) setiap kali transcribe() dipanggil,
-        # BUKAN sekali di sini pas startup. Ini supaya kalau Admin ganti
-        # provider/API key lewat dashboard, fitur voice otomatis ikut berubah
-        # tanpa perlu restart server.
         model_size = settings.WHISPER_MODEL
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if TORCH_AVAILABLE and torch.cuda.is_available() else "cpu"
         self.model = self._load_model(model_size)
         logger.info(
             "STT initialized (local fallback model=%s, device=%s). "

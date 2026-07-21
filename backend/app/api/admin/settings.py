@@ -33,10 +33,11 @@ def admin_save_settings():
     updates = {}
     for key, value in payload.items():
         if key == "llm_api_key":
-            if value == "********":
+            val_clean = str(value).strip().strip('"').strip("'")
+            if val_clean == "********":
                 continue  # Skip overwriting masked key
             else:
-                value = encrypt_api_key(value)
+                value = encrypt_api_key(val_clean)
         updates[key] = str(value)
                 
     if updates:
@@ -152,12 +153,19 @@ def admin_get_stats():
 @api_bp.route("/settings/public", methods=["GET"])
 @require_auth()
 def get_public_settings():
-    """Endpoint publik (semua user login) untuk info identitas asisten saja."""
-    keys = ["assistant_name", "assistant_job", "greeting_message", "avatar_gender"]
+    """Endpoint publik (semua user login) untuk info identitas dan visual avatar asisten."""
+    keys = ["assistant_name", "assistant_job", "greeting_message", "avatar_char_image", "avatar_bg_image", "avatar_vrm_url", "avatar_offset_x", "avatar_offset_y", "avatar_scale", "avatar_rotation", "avatar_is_mirrored"]
     sett = SettingsRepository.get_settings_by_keys(keys)
     return jsonify({
         "assistant_name": sett.get("assistant_name") or "Aiko",
         "assistant_job": sett.get("assistant_job") or "",
         "greeting_message": sett.get("greeting_message") or "",
-        "avatar_gender": sett.get("avatar_gender") or "female",
+        "avatar_char_image": sett.get("avatar_char_image") or "/assets/images/default_avatar.png",
+        "avatar_bg_image": sett.get("avatar_bg_image") or "",
+        "avatar_vrm_url": sett.get("avatar_vrm_url") or "",
+        "avatar_offset_x": int(sett.get("avatar_offset_x") or 0),
+        "avatar_offset_y": int(sett.get("avatar_offset_y") or 0),
+        "avatar_scale": float(sett.get("avatar_scale") or 1.0),
+        "avatar_rotation": float(sett.get("avatar_rotation") or 0.0),
+        "avatar_is_mirrored": (sett.get("avatar_is_mirrored") or "false") == "true",
     })

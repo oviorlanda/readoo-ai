@@ -11,20 +11,20 @@ pydantic-settings>=2.0
 # Database & Cache
 redis>=5.0
 
-# AI / LLM
+# Pure ONNX AI / LLM (PyTorch-Free Embeddings)
 litellm>=1.0
-sentence-transformers>=2.2
+onnxruntime>=1.15
+transformers>=4.30.0
+huggingface_hub>=0.16.0
 faiss-cpu>=1.7
+rank-bm25>=0.2.2
 numpy>=1.24
-torch>=2.0
-scipy>=1.10
 
 # Speech
 openai-whisper>=20231117
 edge-tts>=6.0
 supertonic>=0.1
-onnxruntime>=1.15
-einops>=0.7
+num2words>=0.5.13
 
 # Data Processing
 pandas>=2.0

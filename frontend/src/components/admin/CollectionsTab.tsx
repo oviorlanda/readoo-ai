@@ -225,13 +225,13 @@ export const CollectionsTab: React.FC<CollectionsTabProps> = ({
 
         {/* Search bar inside collection */}
         <div className="relative mb-4">
-          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400 dark:text-gray-400" />
           <input
             type="text"
             placeholder="Cari dalam dokumen ini..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-750 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none transition-all"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all shadow-sm font-medium"
           />
         </div>
 
@@ -248,13 +248,13 @@ export const CollectionsTab: React.FC<CollectionsTabProps> = ({
           ) : (
             <table className="w-full text-left border-collapse min-w-[600px]">
               <thead>
-                <tr className="bg-gray-50 dark:bg-gray-750 border-b border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 z-10">
+                <tr className="bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider sticky top-0 z-10">
                   {headers.map((h) => (
-                    <th key={h} className="px-5 py-3 bg-gray-50 dark:bg-gray-750">
+                    <th key={h} className="px-5 py-3.5 bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-bold">
                       {h}
                     </th>
                   ))}
-                  <th className="px-5 py-3 text-center bg-gray-50 dark:bg-gray-750 w-24">
+                  <th className="px-5 py-3.5 text-center bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-bold w-24">
                     Aksi
                   </th>
                 </tr>
@@ -312,7 +312,7 @@ export const CollectionsTab: React.FC<CollectionsTabProps> = ({
                     <textarea
                       value={newDocFields[key]}
                       onChange={(e) => setNewDocFields({ ...newDocFields, [key]: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-750 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none transition-all text-sm h-16 resize-none"
+                      className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500 outline-none transition-all text-sm h-16 resize-none"
                       placeholder={`Nilai untuk kolom ${key}`}
                       required={selectedCol.embedding_cols.includes(key)}
                     />

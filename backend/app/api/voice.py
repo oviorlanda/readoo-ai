@@ -63,5 +63,6 @@ def tts_endpoint():
 
 
 @api_bp.route("/audio/<path:filename>")
+@api_bp.route("/voice/audio/<path:filename>")
 def serve_audio(filename):
     return send_from_directory(TTS_DIR, filename, as_attachment=False)

@@ -19,7 +19,7 @@ export default function App() {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
+    <div className="min-h-screen bg-[#0B0F17] text-slate-100">
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/chat" replace /> : <LoginPage />} />
         <Route path="/register" element={user ? <Navigate to="/chat" replace /> : <RegisterPage />} />

@@ -17,6 +17,8 @@ export interface ChatMessage {
   content: string;
   created_at?: string;
   items?: ChatItem[];
+  all_items?: ChatItem[];
+  fast_path?: boolean;
 }
 
 export interface ChatSession {

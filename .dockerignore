@@ -1,0 +1,34 @@
+# Version Control & IDE
+.git
+.gitignore
+.vscode
+.gemini
+.idea
+
+# Secrets & Environment Files
+.env
+.env.local
+.env.*.local
+
+# Python & Virtual Environment
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+venv
+data/*.db
+data/.cache
+data/uploads/*
+!data/uploads/.gitkeep
+
+# Node.js & Frontend Build
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Temporary & OS Files
+.DS_Store
+Thumbs.db
+*.log

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { auth } from '../services/api';
-import { Mail, BookOpen, ArrowLeft } from 'lucide-react';
+import { Mail, Sparkles, ArrowLeft } from 'lucide-react';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -25,37 +26,66 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4">
-      <div className="w-full max-w-md animate-fade-in">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl mb-4">
-            <BookOpen className="w-8 h-8 text-white" />
+    <div className="min-h-screen flex items-center justify-center bg-[#0B0F17] text-slate-100 p-4 relative overflow-hidden">
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
+
+      <div className="w-full max-w-md animate-fade-in relative z-10 space-y-6">
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl shadow-lg shadow-indigo-500/10 mb-2">
+            <Sparkles className="w-7 h-7 text-indigo-400" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Lupa Password</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Reset Password</h1>
+          <p className="text-xs text-slate-400">Masukkan email Anda untuk menerima tautan pemulihan</p>
         </div>
 
-        <div className="card">
+        <div className="linear-panel p-7 space-y-5 border border-slate-800/80 bg-[#0D121D] shadow-2xl">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">{error}</div>
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs font-medium">
+              {error}
+            </div>
           )}
           {message && (
-            <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg text-green-700 dark:text-green-400 text-sm">{message}</div>
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-xs font-medium">
+              {message}
+            </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input-field" placeholder="email@example.com" required />
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-slate-300">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input-linear"
+                placeholder="email@example.com"
+                required
+              />
             </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-              {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Mail className="w-4 h-4" />}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-linear-primary w-full justify-center py-2.5 mt-2 text-sm font-semibold"
+            >
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Mail className="w-4 h-4" />
+              )}
               {loading ? 'Mengirim...' : 'Kirim Link Reset'}
             </button>
           </form>
 
-          <Link to="/login" className="mt-4 flex items-center justify-center gap-1 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
-            <ArrowLeft className="w-4 h-4" /> Kembali ke Login
-          </Link>
+          <div className="pt-2 text-center border-t border-slate-800/80">
+            <Link to="/login" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
+              <ArrowLeft className="w-3.5 h-3.5" /> Kembali ke Login
+            </Link>
+          </div>
         </div>
       </div>
     </div>
