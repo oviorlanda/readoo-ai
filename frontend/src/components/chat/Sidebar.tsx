@@ -1,6 +1,5 @@
 import React from 'react';
-import { MessageSquare, Trash2, X } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { MessageSquare, Trash2, X, Plus } from 'lucide-react';
 import type { ChatSession } from '../../types';
 
 interface SidebarProps {
@@ -24,63 +23,73 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   return (
     <>
-      {/* Sidebar container */}
       <div
-        className={`fixed inset-y-0 left-0 z-30 w-72 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-200 lg:relative lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-30 w-72 bg-[#0D121D] border-r border-slate-800/80 transform transition-transform duration-200 lg:relative lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900 dark:text-white">Riwayat Chat</h2>
+        <div className="p-3.5 border-b border-slate-800/80 bg-[#0F1420]/80">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50"></span>
+              <h2 className="font-semibold text-slate-200 text-xs uppercase tracking-wider">Percakapan</h2>
+            </div>
             <button
               onClick={onClose}
-              className="lg:hidden p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400"
+              className="lg:hidden p-1 hover:bg-slate-800 rounded text-slate-400"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
-          <Button
+          <button
             onClick={onNewChat}
-            variant="secondary"
-            className="mt-3 w-full text-sm py-2"
+            className="btn-linear-primary w-full justify-center text-xs py-2"
           >
-            + Chat Baru
-          </Button>
+            <Plus className="w-4 h-4" /> Chat Baru
+          </button>
         </div>
-        <div className="overflow-y-auto h-[calc(100vh-8rem)]">
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => onSelectSession(s.id)}
-              className={`flex items-center gap-2 p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 transition-all duration-150 ${
-                currentSession === s.id
-                  ? 'bg-blue-50/80 dark:bg-blue-900/20 border-l-4 border-l-blue-500 pl-2 font-medium'
-                  : 'border-l-4 border-l-transparent'
-              }`}
-            >
-              <MessageSquare className={`w-4 h-4 flex-shrink-0 ${currentSession === s.id ? 'text-blue-500' : 'text-gray-400'}`} />
-              <span className={`text-sm truncate flex-1 ${currentSession === s.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>
-                {s.title}
-              </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteSession(s.id);
-                }}
-                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
-              >
-                <Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" />
-              </button>
+        <div className="overflow-y-auto h-[calc(100vh-7rem)] p-2 space-y-1">
+          {sessions.length === 0 ? (
+            <div className="text-center py-6 text-slate-500 text-xs">
+              Belum ada riwayat percakapan.
             </div>
-          ))}
+          ) : (
+            sessions.map((s) => {
+              const isActive = currentSession === s.id;
+              return (
+                <div
+                  key={s.id}
+                  onClick={() => onSelectSession(s.id)}
+                  className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all duration-150 group border ${
+                    isActive
+                      ? 'bg-slate-800/80 border-indigo-500/40 text-slate-100 shadow-sm'
+                      : 'border-transparent hover:bg-slate-800/40 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-400'}`} />
+                  <span className="text-xs truncate flex-1 font-medium">
+                    {s.title}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteSession(s.id);
+                    }}
+                    className="p-1 opacity-0 group-hover:opacity-100 hover:bg-slate-700/60 rounded text-slate-500 hover:text-red-400 transition-all"
+                    title="Hapus Sesi"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 lg:hidden"
           onClick={onClose}
         />
       )}

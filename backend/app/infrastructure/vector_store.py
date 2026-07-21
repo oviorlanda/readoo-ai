@@ -7,7 +7,8 @@ from datetime import datetime
 import faiss
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer, CrossEncoder
+import onnxruntime as ort
+from transformers import AutoTokenizer
 
 from app.core.config import settings
 from app.repositories.collection_repository import CollectionRepository
@@ -15,36 +16,80 @@ from app.repositories.collection_repository import CollectionRepository
 logger = logging.getLogger(__name__)
 
 
+class OnnxEmbeddingEncoder:
+    """Pure ONNX Runtime Embedding Model Encoder (PyTorch-Free)."""
+
+    def __init__(self, model_name: str):
+        logger.info("Initializing Pure ONNX Embedding Model: %s", model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        
+        onnx_path = None
+        try:
+            from huggingface_hub import hf_hub_download
+            onnx_path = hf_hub_download(repo_id=model_name, filename="onnx/model.onnx")
+        except Exception:
+            try:
+                from huggingface_hub import hf_hub_download
+                onnx_path = hf_hub_download(repo_id=model_name, filename="model.onnx")
+            except Exception as e:
+                logger.error("Failed to download ONNX model weights for %s: %s", model_name, e)
+                raise e
+
+        self.session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        
+        # Determine dimension using dummy inference
+        dummy_inputs = self.tokenizer(["test"], return_tensors="np")
+        dummy_onnx = {k: v.astype(np.int64) for k, v in dummy_inputs.items()}
+        dummy_out = self.session.run(None, dummy_onnx)
+        self.dimension = dummy_out[0].shape[-1]
+        logger.info("Pure ONNX Embedding Model initialized successfully (Dimension: %d)", self.dimension)
+
+    def encode(self, sentences, show_progress_bar: bool = False) -> np.ndarray:
+        is_single = isinstance(sentences, str)
+        if is_single:
+            sentences = [sentences]
+
+        if not sentences:
+            return np.empty((0, self.dimension), dtype=np.float32)
+
+        inputs = self.tokenizer(sentences, padding=True, truncation=True, return_tensors="np", max_length=512)
+        onnx_inputs = {
+            "input_ids": inputs["input_ids"].astype(np.int64),
+            "attention_mask": inputs["attention_mask"].astype(np.int64),
+        }
+        if "token_type_ids" in inputs:
+            onnx_inputs["token_type_ids"] = inputs["token_type_ids"].astype(np.int64)
+
+        outputs = self.session.run(None, onnx_inputs)
+        token_embeddings = outputs[0]  # Shape: (batch_size, seq_len, dim)
+
+        # Mean pooling
+        input_mask_expanded = np.expand_dims(inputs["attention_mask"], -1)
+        sum_embeddings = np.sum(token_embeddings * input_mask_expanded, axis=1)
+        sum_mask = np.clip(np.sum(input_mask_expanded, axis=1), a_min=1e-9, a_max=None)
+        embeddings = sum_embeddings / sum_mask
+
+        # L2 normalize embeddings
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms = np.clip(norms, a_min=1e-9, a_max=None)
+        embeddings = (embeddings / norms).astype(np.float32)
+
+        return embeddings[0] if is_single else embeddings
+
+    def get_embedding_dimension(self) -> int:
+        return self.dimension
+
+
 class VectorStore:
     def __init__(self):
-        import torch
-        try:
-            torch.set_num_threads(2)
-            logger.info("PyTorch CPU threads successfully limited to 2")
-        except Exception as e:
-            logger.warning("Failed to set PyTorch thread limit: %s", e)
-
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.data_dir = os.path.join(base_dir, "data")
         self.store_dir = os.path.join(self.data_dir, "vector_store")
         os.makedirs(self.store_dir, exist_ok=True)
 
-        # Initialize embedding model (ONNX backend, O2-optimized for CPU inference)
-        self.encoder = SentenceTransformer(
-            settings.EMBEDDING_MODEL,
-            backend="onnx",
-            model_kwargs={
-                "provider": "CPUExecutionProvider",
-                "file_name": "onnx/model_O2.onnx",
-            },
-        )
+        # Initialize Pure ONNX embedding encoder (PyTorch-free)
+        self.encoder = OnnxEmbeddingEncoder(settings.EMBEDDING_MODEL)
         self.dimension = self.encoder.get_embedding_dimension()
-
-        # Initialize CrossEncoder reranker if configured
-        if settings.USE_RERANKER:
-            self.reranker = CrossEncoder(settings.RERANKER_MODEL, trust_remote_code=True)
-        else:
-            self.reranker = None
 
         self.index = None
         self.active_collection_id = None
@@ -88,8 +133,8 @@ class VectorStore:
             doc_ids.append(r["id"])
             texts.append(r["content"])
 
-        # Embed all texts
-        embeddings = self.encoder.encode(texts, show_progress_bar=False)
+        # Embed all texts via ONNX encoder
+        embeddings = self.encoder.encode(texts)
         embeddings = np.array(embeddings, dtype=np.float32)
 
         # Create IndexIDMap to preserve SQLite Primary Key IDs inside FAISS
@@ -117,7 +162,6 @@ class VectorStore:
         import math
         from collections import Counter
 
-        # Tokenize query
         query_tokens = query.lower().split()
         if not query_tokens or not documents:
             return []
@@ -146,7 +190,6 @@ class VectorStore:
             for term in query_tokens:
                 if term in tf:
                     doc_freq = df[term]
-                    # Log-based IDF with smoothing
                     idf = math.log((corpus_size - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0)
                     term_tf = tf[term]
                     numerator = term_tf * (k1 + 1)
@@ -184,23 +227,17 @@ class VectorStore:
             logger.warning("Search failed: No active RAG collection loaded.")
             return []
 
-        # 1. Semantic search (FAISS)
+        # 1. Semantic search (FAISS + ONNX)
         semantic_results = []
         if self.index is not None:
-            # Embed query
-            query_vec = self.encoder.encode([query_text], show_progress_bar=False)
+            query_vec = self.encoder.encode([query_text])
             query_vec = np.array(query_vec, dtype=np.float32)
 
-            # Search FAISS
-            distances, ids = self.index.search(query_vec, 20)  # get top 20 candidates for fusion
+            distances, ids = self.index.search(query_vec, 20)
 
-            # Filter padding IDs (-1)
             matched_ids = [int(i) for i in ids[0] if i != -1]
             if matched_ids:
-                # Fetch matching documents from SQLite
                 rows = CollectionRepository.get_documents_by_ids(matched_ids)
-
-                # Sort documents to match FAISS ranking order
                 doc_map = {r["id"]: r for r in rows}
                 for doc_id in matched_ids:
                     if doc_id in doc_map:
@@ -220,59 +257,15 @@ class VectorStore:
             meta["_content"] = r["content"]
             candidates.append(meta)
 
-        keyword_results = self._rank_bm25(query_text, candidates)
-        keyword_results = keyword_results[:20]  # get top 20 candidates for fusion
+        keyword_results = self._rank_bm25(query_text, candidates)[:20]
 
         # 3. Reciprocal Rank Fusion (RRF)
         fused_results = self._reciprocal_rank_fusion(semantic_results, keyword_results, k=60)
 
-        # 4. Limit to top_k before returning
+        # 4. Return top-K retrieved documents without external reranking
         return fused_results[:top_k]
 
-    def rerank(self, query_text, documents, top_k=None):
-        if not self.reranker or not documents:
-            return documents[:top_k] if top_k else documents
-
-        import math
-        pairs = [[query_text, doc.get("_content", "")] for doc in documents]
-        raw_scores = self.reranker.predict(pairs)
-        scores = [1 / (1 + math.exp(-float(s))) for s in raw_scores]
-        logger.info("Rerank scores for query '%s': %s", query_text, [round(s, 3) for s in scores])
-
-        if isinstance(scores, float):
-            scores = [scores]
-
-        ranked = []
-        for d, score in zip(documents, scores):
-            # Skor kemiripan semantik MURNI, dipakai khusus untuk pengecekan
-            # threshold relevansi di chat_service.py (fungsi _search_and_rerank).
-            d["rerank_score_raw"] = float(score)
-            d["rerank_score"] = float(score)
-
-            # Metric popular scaling if views or popularity is present in metadata
-            views = 0
-            for key in ["views", "dilihat", "popularity"]:
-                if key in d:
-                    try:
-                        views = float(d[key])
-                        break
-                    except (ValueError, TypeError):
-                        pass
-            d["rerank_score"] += 0.01 * np.log1p(views)
-            ranked.append(d)
-
-        ranked.sort(key=lambda x: x["rerank_score"], reverse=True)
-
-        # FIX: kembalikan SEMUA kandidat (sudah terurut berdasar skor+boost
-        # popularitas), bukan langsung dipotong ke top_k di sini. Supaya
-        # chat_service.py bisa mengecek threshold relevansi terhadap
-        # rerank_score_raw dari SELURUH kandidat, bukan cuma yang kebetulan
-        # lolos ke top-N gara-gara boost popularitas. Pemotongan ke jumlah
-        # final dilakukan belakangan di chat_service.py, SETELAH threshold.
-        return ranked
-
     def add_collection_from_csv(self, name, embedding_cols, display_cols, df):
-        import sqlite3
         CollectionRepository.deactivate_all_collections()
 
         now = datetime.now().isoformat()
@@ -315,7 +308,6 @@ class VectorStore:
         return col_id
 
     def add_collection_from_unstructured(self, name, chunks, original_filename):
-        import sqlite3
         CollectionRepository.deactivate_all_collections()
 
         now = datetime.now().isoformat()
@@ -348,7 +340,6 @@ class VectorStore:
     def delete_collection(self, collection_id):
         CollectionRepository.delete_collection(collection_id)
 
-        # Clean index file
         index_path = os.path.join(self.store_dir, f"collection_{collection_id}.index")
         if os.path.exists(index_path):
             try:
@@ -377,7 +368,7 @@ class VectorStore:
         if os.path.exists(index_path):
             try:
                 index = faiss.read_index(index_path)
-                embedding = self.encoder.encode([content], show_progress_bar=False)
+                embedding = self.encoder.encode([content])
                 embedding = np.array(embedding, dtype=np.float32)
                 index.add_with_ids(embedding, np.array([doc_id], dtype=np.int64))
                 faiss.write_index(index, index_path)

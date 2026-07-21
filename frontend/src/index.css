@@ -4,41 +4,91 @@
 
 @layer base {
   body {
-    @apply antialiased;
+    @apply antialiased bg-[#0B0F17] text-slate-100 selection:bg-indigo-500 selection:text-white dark:bg-[#0B0F17] dark:text-slate-100;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.01em;
   }
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  /* Linear Enterprise Precision Cards & Containers */
+  .linear-card {
+    @apply bg-[#111622] border border-slate-800/80 rounded-xl p-4 shadow-sm transition-all duration-200 hover:border-slate-700;
   }
-  .btn-secondary {
-    @apply bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+
+  .linear-panel {
+    @apply bg-[#0D121D] border border-slate-800/80 rounded-xl shadow-md transition-all duration-200;
   }
-  .input-field {
-    @apply w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
+
+  .linear-header {
+    @apply bg-[#0F1420]/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 flex items-center justify-between sticky top-0 z-20;
   }
-  .card {
-    @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6;
+
+  /* Enterprise Buttons */
+  .btn-linear-primary {
+    @apply bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-all duration-150 shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2;
   }
+
+  .btn-linear-secondary {
+    @apply bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 font-medium py-2 px-4 rounded-lg text-sm transition-all duration-150 active:scale-95 flex items-center gap-2;
+  }
+
+  .btn-linear-ghost {
+    @apply hover:bg-slate-800/60 text-slate-400 hover:text-slate-200 font-medium py-1.5 px-3 rounded-lg text-sm transition-all duration-150 active:scale-95 flex items-center gap-1.5;
+  }
+
+  /* Linear High-Precision Input */
+  .input-linear {
+    @apply w-full px-3.5 py-2.5 border border-slate-800 bg-[#0F1420] text-slate-100 placeholder-slate-500 rounded-lg text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all duration-150;
+  }
+
+  /* Precision Status Badges */
+  .badge-fast-path {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20;
+  }
+
+  .badge-rag {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20;
+  }
+
+  .badge-tech {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-800 text-slate-300 border border-slate-700;
+  }
+
+  /* Message Stream Styling */
   .message-bubble-user {
-    @apply bg-primary-600 text-white rounded-2xl rounded-br-sm px-4 py-3 max-w-[80%] ml-auto animate-fade-in;
+    @apply bg-indigo-600/90 text-white rounded-xl rounded-tr-none px-4 py-3 max-w-[88%] ml-auto text-sm leading-relaxed shadow-sm border border-indigo-500/40 animate-fade-in;
   }
+
   .message-bubble-ai {
-    @apply bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 max-w-[80%] animate-fade-in;
+    @apply bg-[#131825] text-slate-200 border border-slate-800 rounded-xl rounded-tl-none px-4 py-3 max-w-[88%] text-sm leading-relaxed shadow-sm animate-fade-in;
   }
 }
 
-/* Scrollbar styling */
+/* Custom Scrollbar for Precision Inspection */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  @apply bg-slate-800 rounded hover:bg-slate-700;
 }
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400 dark:bg-gray-500;
+
+/* Micro Fade Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

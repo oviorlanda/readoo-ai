@@ -12,11 +12,15 @@ from waitress import serve
 from app import create_app
 from app.core.config import settings
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("waitress")
 
 # Create Flask application
 app = create_app()
 
 if __name__ == "__main__":
+    print("\n========================================================================")
+    print(f"  READOO AI BACKEND SERVER IS RUNNING ON http://localhost:{settings.PORT}")
+    print("========================================================================\n", flush=True)
     logger.info("Starting Waitress production WSGI server on %s:%d", settings.HOST, settings.PORT)
     serve(app, host=settings.HOST, port=settings.PORT, threads=16)

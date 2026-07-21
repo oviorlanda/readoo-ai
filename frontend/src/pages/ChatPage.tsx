@@ -8,7 +8,8 @@ import { Sidebar } from '../components/chat/Sidebar';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { ItemCard } from '../components/chat/ItemCard';
 import { AudioRecorder } from '../components/chat/AudioRecorder';
-import { VrmAvatar, clearVrmCache } from '../components/chat/VrmAvatar';
+import { VrmTalkingHeadAvatar } from '../components/chat/VrmTalkingHeadAvatar';
+import { RagInspector } from '../components/chat/RagInspector';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Button } from '../components/ui/Button';
 
@@ -23,35 +24,59 @@ export default function ChatPage() {
   // Default 'Aiko' dipakai sebagai fallback selama fetch belum selesai
   // atau kalau fetch gagal, supaya UI tetap ada teksnya (gak kosong/blank).
   const [assistantName, setAssistantName] = useState('Aiko');
-
-  // NEW: gender avatar 3D, diambil dari endpoint yang sama (/api/settings/public).
-  // Default 'female' dipakai sebagai fallback selama fetch belum selesai/gagal,
-  // konsisten sama default di backend & di komponen VrmAvatar.
-  const [avatarGender, setAvatarGender] = useState<'female' | 'male'>('female');
+  const [avatarVrmUrl, setAvatarVrmUrl] = useState<string | null>(null);
+  const [avatarCharImage, setAvatarCharImage] = useState('/assets/images/default_avatar.png');
+  const [avatarBgImage, setAvatarBgImage] = useState('');
+  const [avatarOffsetX, setAvatarOffsetX] = useState(0);
+  const [avatarOffsetY, setAvatarOffsetY] = useState(0);
+  const [avatarScale, setAvatarScale] = useState(1);
+  const [avatarRotation, setAvatarRotation] = useState(0);
+  const [avatarIsMirrored, setAvatarIsMirrored] = useState(false);
+  const [avatarAudioUrl, setAvatarAudioUrl] = useState<string | null>(null);
+  const [avatarVideoUrl, setAvatarVideoUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchAssistantName = async () => {
+    const fetchPublicSettings = async () => {
       try {
         const res = await fetch('/api/settings/public', {
           headers: {
             Authorization: 'Bearer ' + localStorage.getItem('token'),
           },
         });
-        if (!res.ok) return; // biarkan fallback 'Aiko' kalau request gagal
+        if (!res.ok) return;
         const data = await res.json();
         if (data?.assistant_name) {
           setAssistantName(data.assistant_name);
         }
-        // NEW: set avatarGender dari response yang sama, hanya kalau nilainya
-        // valid ('male' atau 'female') supaya gak ke-set ke value aneh/undefined.
-        if (data?.avatar_gender === 'male' || data?.avatar_gender === 'female') {
-          setAvatarGender(data.avatar_gender);
+        if (data?.avatar_vrm_url) {
+          setAvatarVrmUrl(data.avatar_vrm_url);
+        }
+        if (data?.avatar_char_image) {
+          setAvatarCharImage(data.avatar_char_image);
+        }
+        if (data?.avatar_bg_image !== undefined) {
+          setAvatarBgImage(data.avatar_bg_image);
+        }
+        if (data?.avatar_offset_x !== undefined) {
+          setAvatarOffsetX(Number(data.avatar_offset_x));
+        }
+        if (data?.avatar_offset_y !== undefined) {
+          setAvatarOffsetY(Number(data.avatar_offset_y));
+        }
+        if (data?.avatar_scale !== undefined) {
+          setAvatarScale(Number(data.avatar_scale));
+        }
+        if (data?.avatar_rotation !== undefined) {
+          setAvatarRotation(Number(data.avatar_rotation));
+        }
+        if (data?.avatar_is_mirrored !== undefined) {
+          setAvatarIsMirrored(Boolean(data.avatar_is_mirrored));
         }
       } catch {
-        // biarkan fallback 'Aiko' kalau network/parse error
+        /* fallback default settings */
       }
     };
-    fetchAssistantName();
+    fetchPublicSettings();
   }, []);
 
   // FIX: state messages & session DIPISAH per mode, supaya percakapan di
@@ -74,6 +99,7 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [avatarAnim, setAvatarAnim] = useState<'idle' | 'wave' | 'thinking'>('idle');
+  const [showAvatarBubble, setShowAvatarBubble] = useState(false);
 
   // FIX (dark mode bug): dulu warna background caption bubble di-hardcode putih
   // lewat inline `style.backgroundImage`, yang selalu override class Tailwind
@@ -128,7 +154,6 @@ export default function ChatPage() {
   }, [loadSessions]);
 
   const handleLogout = async () => {
-    clearVrmCache();
     await logout();
     navigate('/login');
   };
@@ -176,7 +201,11 @@ export default function ChatPage() {
                   const newMsgs = [...prev];
                   const last = newMsgs[newMsgs.length - 1];
                   if (last.role === 'assistant') {
-                    newMsgs[newMsgs.length - 1] = { ...last, items: parsed.items };
+                    newMsgs[newMsgs.length - 1] = {
+                      ...last,
+                      items: parsed.items,
+                      all_items: parsed.all_items || parsed.items,
+                    };
                   }
                   return newMsgs;
                 });
@@ -217,44 +246,52 @@ export default function ChatPage() {
 
     try {
       const res = await chat.sendAvatarMessage(userMsg, avatarSession || undefined);
-      setAvatarMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: res.speech_text,
-          items: res.items as ChatItem[] | undefined,
-        },
-      ]);
 
       if (res.session_id) {
         setAvatarSession(res.session_id);
         loadSessions();
       }
 
-      setAvatarAnim('wave');
-      // Synthesize Speech
-      const ttsRes = await voice.textToSpeech(res.speech_text);
-      if (ttsRes.audio_url) {
-        const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
-        if (audioEl) {
-          audioEl.src = ttsRes.audio_url;
-          audioEl.load();
-          audioEl.play().catch((e) => console.warn('Audio play blocked:', e));
+      const assistantMsg: ChatMessage = {
+        role: 'assistant',
+        content: res.reply || res.speech_text,
+        items: res.items as ChatItem[] | undefined,
+        all_items: (res.all_items || res.items) as ChatItem[] | undefined,
+      };
 
-          audioEl.onended = () => {
-            setAvatarAnim('idle');
-          };
+      // Use instant single-flight audio_url if returned by server, or fallback to TTS client
+      let audioUrl = (res as { audio_url?: string }).audio_url;
+      if (!audioUrl && res.speech_text) {
+        try {
+          const ttsRes = await voice.textToSpeech(res.speech_text);
+          audioUrl = ttsRes.audio_url;
+        } catch {
+          /* fallback ignore */
         }
-      } else {
-        setAvatarAnim('idle');
       }
+
+      const videoUrl = (res as { video_url?: string }).video_url;
+      if (videoUrl) {
+        setAvatarVideoUrl(videoUrl);
+      }
+
+      if (audioUrl) {
+        setAvatarAudioUrl(audioUrl);
+      } else {
+        // Fallback: auto-dismiss bubble after 6 seconds if no audio file is present
+        setTimeout(() => {
+          setShowAvatarBubble(false);
+        }, 6000);
+      }
+      setAvatarMessages((prev) => [...prev, assistantMsg]);
+      setShowAvatarBubble(true);
+      setLoading(false);
     } catch (err) {
       setAvatarMessages((prev) => [
         ...prev,
         { role: 'assistant', content: 'Error: Gagal memproses pesan avatar.' },
       ]);
       setAvatarAnim('idle');
-    } finally {
       setLoading(false);
     }
   };
@@ -393,38 +430,41 @@ export default function ChatPage() {
         <audio id="tts-audio" className="hidden" crossOrigin="anonymous" />
 
         {/* Header */}
-        <header className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-900 flex-shrink-0 z-20">
+        <header className="border-b border-slate-800/80 px-4 py-3 bg-[#0F1420] flex-shrink-0 z-20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {mode === 'chat' && (
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500"
+                  className="lg:hidden p-1.5 hover:bg-slate-800 rounded-lg text-slate-400"
                 >
                   <Menu className="w-5 h-5" />
                 </button>
               )}
-              <h1 className="font-semibold text-gray-900 dark:text-white">Readoo AI</h1>
+              <h1 className="font-bold text-slate-100 text-base tracking-tight flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block shadow-sm shadow-indigo-500/50"></span>
+                Readoo AI
+              </h1>
             </div>
 
             {/* Mode Switcher */}
-            <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 border border-gray-200/50 dark:border-gray-700/50 shadow-inner">
+            <div className="flex bg-[#0D121D] rounded-lg p-1 border border-slate-800">
               <button
                 onClick={() => setMode('chat')}
-                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                className={`text-xs px-3.5 py-1.5 rounded-md font-medium transition-all ${
                   mode === 'chat'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 Chatting
               </button>
               <button
                 onClick={() => setMode('avatar')}
-                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                className={`text-xs px-3.5 py-1.5 rounded-md font-medium transition-all ${
                   mode === 'avatar'
-                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-indigo-600 text-white shadow-sm font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 3D Avatar
@@ -434,24 +474,23 @@ export default function ChatPage() {
             <div className="flex items-center gap-2">
               <ThemeToggle />
               {isAdmin && (
-                <Button
+                <button
                   onClick={() => navigate('/admin')}
-                  variant="secondary"
-                  className="text-sm py-1.5 px-3"
+                  className="btn-linear-secondary text-xs py-1.5 px-3"
                 >
                   Admin
-                </Button>
+                </button>
               )}
               <button
                 onClick={() => setShowPasswordModal(true)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 dark:text-gray-400"
+                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
                 title="Ganti Password"
               >
                 <Key className="w-4 h-4" />
               </button>
               <button
                 onClick={handleLogout}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-500 dark:text-gray-400"
+                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
                 title="Log Out"
               >
                 <LogOut className="w-4 h-4" />
@@ -460,171 +499,163 @@ export default function ChatPage() {
           </div>
         </header>
 
-        {/* Chatting View */}
-        {mode === 'chat' ? (
-          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-            {chatMessages.length === 0 && (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center text-gray-400 dark:text-gray-500">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>Mulai chat dengan {assistantName}, asisten AI Anda</p>
-                </div>
-              </div>
-            )}
-            {chatMessages.map((msg, i) => (
-              <div key={i}>
-                <ChatBubble
-                  message={msg}
-                  isStreaming={streaming && i === chatMessages.length - 1}
-                />
-
-                {/* Rekomendasi buku nempel di bawah jawaban ini saja, permanen */}
-                {msg.role === 'assistant' && msg.items && msg.items.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 animate-fade-in">
-                    {msg.items.map((item, j) => (
-                      <ItemCard key={j} item={item} />
-                    ))}
+        {/* Main Dual-Pane Body Area */}
+        <div className="flex-1 flex overflow-hidden relative bg-[#0B0F17]">
+          {/* Left / Main Chat Content */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-[#0B0F17]">
+            {/* Chatting View */}
+            {mode === 'chat' ? (
+              <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 bg-[#0B0F17]">
+                {chatMessages.length === 0 && (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center text-slate-500">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-40 text-indigo-400" />
+                      <p className="font-medium text-slate-300 text-sm">Mulai chat dengan {assistantName}, asisten AI Anda</p>
+                      <p className="text-xs text-slate-500 mt-1">Enterprise Search RAG & Fast-Path Pipeline Aktif</p>
+                    </div>
                   </div>
                 )}
-              </div>
-            ))}
+                {chatMessages.map((msg, i) => (
+                  <div key={i}>
+                    <ChatBubble
+                      message={msg}
+                      isStreaming={streaming && i === chatMessages.length - 1}
+                    />
 
-            {loading && !streaming && (
-              <div className="flex justify-start">
-                <div className="message-bubble-ai">
-                  <div className="flex gap-1">
-                    <div
-                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                      style={{ animationDelay: '0ms' }}
-                    />
-                    <div
-                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                      style={{ animationDelay: '150ms' }}
-                    />
-                    <div
-                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                      style={{ animationDelay: '300ms' }}
-                    />
+                    {/* Rekomendasi buku / dokumen items */}
+                    {msg.role === 'assistant' && msg.items && msg.items.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 animate-fade-in">
+                        {msg.items.map((item, j) => (
+                          <ItemCard key={j} item={item} index={j} />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        ) : (
-          /* 3D Avatar View (Constrained to Chat Text Box bounds for perfect horizontal alignment) */
-          <div className="flex-1 w-full relative p-4 flex flex-col justify-end">
-            <div className="max-w-4xl mx-auto w-full h-full relative flex items-center justify-center">
-              <VrmAvatar
-                animation={avatarAnim}
-                assistantName={assistantName}
-                avatarGender={avatarGender}
-              />
+                ))}
 
-              {/* Caption Bubble — ukuran FIXED (gak melar ikut panjang teks), teks di dalam
-                  di-scroll kalau kepanjangan. Diposisikan di pojok kanan-atas supaya:
-                  - Wajah avatar (di tengah frame) tetap full kelihatan, gak ketutup
-                  - Gak numpuk sama card rekomendasi buku yang anchor di bawah (bottom-6)
-                  Avatar TETAP di tengah, gak digeser sama sekali. */}
-              {avatarMessages.length > 0 &&
-                avatarMessages[avatarMessages.length - 1].role === 'assistant' &&
-                avatarAnim === 'wave' && (
-                  <div className="absolute top-4 right-4 w-72 z-10 animate-fade-in">
-                    {/* Bubble utama - ukuran fixed w-72 h-32, isi di-scroll.
-                        FIX (dark mode bug): background gradient dulu hardcode putih
-                        terus (inline style selalu override class Tailwind), jadi
-                        `dark:bg-gray-850/95` di className gak pernah kepakai dan
-                        `gray-850` sendiri bukan warna valid Tailwind. Sekarang warna
-                        base gradient diset manual lewat `isDark` supaya ikut ganti
-                        gelap pas dark mode aktif. */}
-                    <div
-                      className="relative w-72 h-32 shadow-xl rounded-2xl p-3 border-2 border-transparent bg-clip-padding backdrop-blur flex flex-col"
-                      style={{
-                        backgroundImage: `linear-gradient(${isDark ? '#1f2937' : '#ffffff'}, ${
-                          isDark ? '#1f2937' : '#ffffff'
-                        }), linear-gradient(135deg, #6366f1, #a855f7)`,
-                        backgroundOrigin: 'border-box',
-                        backgroundClip: 'padding-box, border-box',
-                      }}
-                    >
-                      {/* Header: mini avatar icon + nama + speaking indicator */}
-                      <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
-                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                          {assistantName.charAt(0).toUpperCase()}
-                        </div>
-                        <p className="text-xs font-bold text-primary-600 dark:text-primary-400 flex-1">
-                          {assistantName}
-                        </p>
-                        {/* Speaking indicator: 3 bar animasi, cuma nongol pas avatar bicara */}
-                        <div className="flex items-end gap-0.5 h-3 flex-shrink-0">
-                          <span
-                            className="w-0.5 bg-primary-500 rounded-full animate-bounce"
-                            style={{ height: '60%', animationDelay: '0ms' }}
-                          />
-                          <span
-                            className="w-0.5 bg-primary-500 rounded-full animate-bounce"
-                            style={{ height: '100%', animationDelay: '150ms' }}
-                          />
-                          <span
-                            className="w-0.5 bg-primary-500 rounded-full animate-bounce"
-                            style={{ height: '40%', animationDelay: '300ms' }}
-                          />
+                {loading && !streaming && (
+                  <div className="flex justify-start">
+                    <div className="message-bubble-ai">
+                      <div className="flex gap-1.5 py-1">
+                        <div
+                          className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"
+                          style={{ animationDelay: '0ms' }}
+                        />
+                        <div
+                          className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"
+                          style={{ animationDelay: '150ms' }}
+                        />
+                        <div
+                          className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"
+                          style={{ animationDelay: '300ms' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            ) : (
+              /* CyberVerse Avatar View - Full Panel Edge-to-Edge */
+              <div className="flex-1 w-full h-full relative overflow-hidden flex items-center justify-center bg-slate-950">
+                <div className="w-full h-full relative flex items-center justify-center">
+                  <VrmTalkingHeadAvatar
+                    vrmUrl={avatarVrmUrl}
+                    bgImage={avatarBgImage}
+                    offsetX={avatarOffsetX}
+                    offsetY={avatarOffsetY}
+                    scale={avatarScale}
+                    rotation={avatarRotation}
+                    isMirrored={avatarIsMirrored}
+                    audioUrl={avatarAudioUrl}
+                    onAudioEnded={() => {
+                      setShowAvatarBubble(false);
+                      setAvatarAudioUrl(null);
+                    }}
+                    assistantName={assistantName}
+                    isSpeaking={loading}
+                    isFull={true}
+                  />
+
+                  {showAvatarBubble &&
+                    avatarMessages.length > 0 &&
+                    avatarMessages[avatarMessages.length - 1].role === 'assistant' && (
+                      <div className="absolute top-4 right-4 w-80 z-20 animate-fade-in pointer-events-auto transition-all duration-300">
+                        <div className="relative w-80 max-h-48 shadow-2xl rounded-2xl p-3.5 border border-indigo-500/30 bg-[#131825]/95 backdrop-blur-md flex flex-col">
+                          <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                {assistantName.charAt(0).toUpperCase()}
+                              </div>
+                              <p className="text-xs font-bold text-indigo-400">
+                                {assistantName}
+                              </p>
+                            </div>
+                            {avatarAudioUrl && (
+                              <span className="text-[10px] text-emerald-400 font-mono font-medium animate-pulse flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                Suara Aktif
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-200 leading-relaxed overflow-y-auto max-h-32 pr-1">
+                            {avatarMessages[avatarMessages.length - 1].content}
+                          </p>
                         </div>
                       </div>
+                    )}
 
-                      {/* Teks — box gak melar, teks yang di-scroll di dalamnya */}
-                      <p className="text-sm text-gray-800 dark:text-gray-100 leading-relaxed overflow-y-auto flex-1 pr-1">
-                        {avatarMessages[avatarMessages.length - 1].content}
-                      </p>
+                  {lastAssistantItems && lastAssistantItems.length > 0 && (
+                    <div className="absolute bottom-6 inset-x-4 overflow-x-auto flex gap-3 p-2 z-10 scrollbar-none snap-x pointer-events-auto">
+                      {lastAssistantItems.map((item, i) => (
+                        <div key={i} className="flex-shrink-0 w-72 snap-center shadow-lg rounded-xl">
+                          <ItemCard item={item} index={i} />
+                        </div>
+                      ))}
                     </div>
-
-                    {/* Tail / ekor bubble kecil di pojok kiri-bawah bubble.
-                        FIX (dark mode bug): sama kayak bubble utama, `dark:bg-gray-850/95`
-                        diganti jadi warna solid via inline style yang ikut `isDark`,
-                        biar warnanya konsisten sama bubble utama di kedua mode. */}
-                    <div
-                      className="absolute -bottom-1.5 left-6 w-3 h-3 border-b-2 border-l-2 border-primary-500/30 transform rotate-[-45deg]"
-                      style={{ backgroundColor: isDark ? '#1f2937' : '#ffffff' }}
-                    />
-                  </div>
-                )}
-
-              {/* Recommendations horizontally scrollable container (avatar mode: cuma tampilin yang terbaru) */}
-              {lastAssistantItems && lastAssistantItems.length > 0 && (
-                <div className="absolute bottom-6 inset-x-4 overflow-x-auto flex gap-3 p-2 z-10 scrollbar-none snap-x pointer-events-auto">
-                  {lastAssistantItems.map((item, i) => (
-                    <div key={i} className="flex-shrink-0 w-72 snap-center shadow-lg rounded-xl">
-                      <ItemCard item={item} />
-                    </div>
-                  ))}
+                  )}
                 </div>
-              )}
+              </div>
+            )}
+
+            {/* Input Form Footer */}
+            <div className="border-t border-slate-800/80 px-4 py-3 bg-[#0F1420]/90 backdrop-blur-md flex-shrink-0 z-20">
+              <div className="flex items-center gap-2 max-w-4xl mx-auto">
+                <AudioRecorder
+                  onTranscribed={(text) => setInput((prev) => prev + ' ' + text)}
+                  disabled={loading}
+                />
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="input-linear flex-1 resize-none h-10 max-h-32 font-sans"
+                  placeholder="Ketik pesan atau pertanyaan..."
+                  rows={1}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={!input.trim() || loading}
+                  className="btn-linear-primary p-2.5 rounded-lg"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
-        )}
 
-        {/* Input Form Footer */}
-        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-white dark:bg-gray-900 flex-shrink-0 z-20">
-          <div className="flex items-center gap-2 max-w-4xl mx-auto">
-            <AudioRecorder
-              onTranscribed={(text) => setInput((prev) => prev + ' ' + text)}
-              disabled={loading}
+          {/* Right Panel: Linear RAG Inspector (Desktop Split-View Showcase) */}
+          <div className="hidden md:block">
+            <RagInspector
+              items={
+                (() => {
+                  const activeMsgs = mode === 'chat' ? chatMessages : avatarMessages;
+                  const lastAss = [...activeMsgs].reverse().find((m) => m.role === 'assistant');
+                  return lastAss?.all_items || lastAss?.items || [];
+                })()
+              }
+              isFastPath={chatMessages.length > 0 && chatMessages[chatMessages.length - 1]?.fast_path}
             />
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="flex-1 w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200 resize-none h-10 max-h-32"
-              placeholder="Ketik pesan..."
-              rows={1}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!input.trim() || loading}
-              className="bg-primary-600 hover:bg-primary-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Send className="w-5 h-5" />
-            </button>
           </div>
         </div>
       </div>

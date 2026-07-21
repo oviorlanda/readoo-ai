@@ -26,7 +26,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
       <div className="max-h-[480px] overflow-y-auto overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 scrollbar-thin">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-gray-50 dark:bg-gray-750 border-b border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            <tr className="bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
               <th className="px-6 py-4">Nama Lengkap</th>
               <th className="px-6 py-4">Email</th>
               <th className="px-6 py-4">Role</th>
@@ -53,7 +53,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                     <select
                       value={u.role}
                       onChange={(e) => onUpdateRole(u.id, e.target.value)}
-                      className="text-xs font-medium py-1.5 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-750 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all cursor-pointer"
+                      className="text-xs font-medium py-1.5 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all cursor-pointer"
                     >
                       <option value="user">User</option>
                       <option value="admin">Admin</option>

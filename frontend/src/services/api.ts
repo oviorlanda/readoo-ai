@@ -84,7 +84,7 @@ export const chat = {
   },
 
   sendAvatarMessage: (message: string, sessionId?: string) =>
-    request<{ speech_text: string; items: unknown[]; session_id: string }>('/chat/avatar', {
+    request<{ speech_text: string; reply?: string; items: unknown[]; all_items?: unknown[]; audio_url?: string; session_id: string }>('/chat/avatar', {
       method: 'POST',
       body: JSON.stringify({ message, session_id: sessionId }),
     }),
@@ -179,6 +179,51 @@ export const admin = {
       method: 'POST',
       body: JSON.stringify(settings),
     }),
+
+  uploadAvatarCharacter: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<{ success: boolean; avatar_char_image: string; message: string }>(
+      '/admin/avatar/upload-character',
+      { method: 'POST', body: formData }
+    );
+  },
+
+  uploadAvatarBackground: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<{ success: boolean; avatar_bg_image: string; message: string }>(
+      '/admin/avatar/upload-background',
+      { method: 'POST', body: formData }
+    );
+  },
+
+  resetAvatarBackground: () =>
+    request<{ success: boolean; avatar_bg_image: string; message: string }>(
+      '/admin/avatar/reset-background',
+      { method: 'POST' }
+    ),
+
+  resetAvatarCharacter: () =>
+    request<{ success: boolean; avatar_char_image: string; message: string }>(
+      '/admin/avatar/reset-character',
+      { method: 'POST' }
+    ),
+
+  uploadAvatarVrm: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<{ success: boolean; avatar_vrm_url: string; message: string }>(
+      '/admin/avatar/upload-vrm',
+      { method: 'POST', body: formData }
+    );
+  },
+
+  resetAvatarVrm: () =>
+    request<{ success: boolean; avatar_vrm_url: string; message: string }>(
+      '/admin/avatar/reset-vrm',
+      { method: 'POST' }
+    ),
 
   getStats: () =>
     request<{

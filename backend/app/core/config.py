@@ -12,38 +12,29 @@ class Settings:
     HOST: str = os.getenv("PYTHON_HOST", "0.0.0.0")
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "")
 
-    # LLM configuration
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq").lower()
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    # Seed Account Credentials
+    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "admin")
+    DEMO_USERNAME: str = os.getenv("DEMO_USERNAME", "user")
+    DEMO_PASSWORD: str = os.getenv("DEMO_PASSWORD", "user")
+
+    # Database & Cache
+    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/readoo.db")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
+
+    # Pure ONNX RAG Embedding Model (PyTorch-free)
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+    # Local Ollama Base URL
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
-    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "openai/gpt-3.5-turbo")
 
-    # RAG configuration
-    USE_RERANKER: bool = os.getenv("USE_RERANKER", "false").lower() == "true"
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
-    RERANKER_MODEL: str = os.getenv("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
-    RERANK_THRESHOLD: float = float(os.getenv("RERANK_THRESHOLD", 0.45))
-    # FIX (bug: item tidak relevan tetap muncul di card):
-    # RERANK_RELATIVE_CUTOFF -- item harus punya skor minimal sekian persen
-    # dari skor tertinggi di antara kandidat query yang sama, biar item yang
-    # jauh lebih lemah dari yang terbaik tidak ikut lolos (sebelumnya 0.15,
-    # terlalu longgar).
-    # RERANK_MIN_ITEM_SCORE -- lantai skor mutlak, dipakai supaya cutoff
-    # relatif di atas tidak pernah turun terlalu rendah walau skor tertinggi
-    # di antara kandidat itu sendiri sudah rendah.
-    RERANK_RELATIVE_CUTOFF: float = float(os.getenv("RERANK_RELATIVE_CUTOFF", 0.6))
-    RERANK_MIN_ITEM_SCORE: float = float(os.getenv("RERANK_MIN_ITEM_SCORE", 0.3))
-
-    # Voice & Audio configuration
-    TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "edge-tts").lower()
+    # Voice Fallback Defaults
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
+    TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "edge-tts")
     TTS_VOICE: str = os.getenv("TTS_VOICE", "id-ID-GadisNeural")
     TTS_RATE: str = os.getenv("TTS_RATE", "+0%")
     SUPERTONIC_VOICE: str = os.getenv("SUPERTONIC_VOICE", "W1")
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
-    GROQ_STT_API_KEY: str = os.getenv("GROQ_STT_API_KEY", "")
 
 
 settings = Settings()
