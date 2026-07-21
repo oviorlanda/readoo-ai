@@ -17,7 +17,7 @@ Dibangun di atas arsitektur modern *Full-Stack AI*, Readoo AI memungkinkan bisni
 
 ### 📸 Preview Tampilan
 
-| Chat Mode | 3D Avatar Mode |
+| 3D Avatar Mode | Admin Panel |
 |:---:|:---:|
 | ![Tampilan Chat](docs/fitur-1.png) | ![Tampilan 3D Avatar](docs/fitur-2.png) |
 
@@ -47,35 +47,39 @@ Dibangun di atas arsitektur modern *Full-Stack AI*, Readoo AI memungkinkan bisni
 
 ## 🏗️ Project Architecture
 
-```
-                    ┌─────────────────────────────────────┐
-                    │          PENGGUNA / BROWSER          │
-                    └─────────────┬───────────────────────┘
-                                  │ HTTP / WebSocket / SSE
-                    ┌─────────────▼───────────────────────┐
-                    │      NGINX (Frontend Reverse Proxy)   │
-                    │  React SPA + Proxy /api → Backend    │
-                    └─────────────┬───────────────────────┘
-                                  │ REST API / SSE
-              ┌───────────────────▼──────────────────────────┐
-              │            FLASK BACKEND (Waitress WSGI)       │
-              │                                                │
-              │  ┌──────────┐  ┌───────────┐  ┌───────────┐  │
-              │  │  Auth API │  │  Chat API  │  │ Voice API │  │
-              │  └──────────┘  └─────┬─────┘  └───────────┘  │
-              │                      │                         │
-              │         ┌────────────▼────────────────────┐   │
-              │         │         RAG Pipeline              │   │
-              │         │  Intent Router → Exact Lookup    │   │
-              │         │  → FAISS + BM25 + RRF Search     │   │
-              │         │  → Context Compactor → LLM       │   │
-              │         └────────────────────────────────┘   │
-              │                                                │
-              │  ┌──────────────┐  ┌────────┐  ┌──────────┐  │
-              │  │  SQLite DB   │  │  Redis  │  │  ONNX    │  │
-              │  │  (6 tables)  │  │  Cache  │  │ Embedder │  │
-              │  └──────────────┘  └────────┘  └──────────┘  │
-              └────────────────────────────────────────────────┘
+```mermaid
+graph TD
+
+    U["👤 Pengguna / Browser"]
+    N["🌐 NGINX<br/>Frontend Reverse Proxy<br/>React SPA + Proxy /api"]
+
+    U -->|HTTP / WebSocket / SSE| N
+
+    subgraph BACKEND["Flask Backend (Waitress WSGI)"]
+
+        AUTH["Auth API"]
+        CHAT["Chat API"]
+        VOICE["Voice API"]
+
+        RAG["RAG Pipeline<br/>Intent Router → Exact Lookup<br/>FAISS + BM25 + RRF Search<br/>Context Compactor → LLM"]
+
+        SQLITE["SQLite Database<br/>6 Tables"]
+        REDIS["Redis Cache"]
+        ONNX["ONNX Embedder"]
+
+        CHAT --> RAG
+
+        AUTH --- SQLITE
+        CHAT --- SQLITE
+        VOICE --- SQLITE
+
+        CHAT --- REDIS
+        CHAT --- ONNX
+    end
+
+    N -->|REST API / SSE| AUTH
+    N -->|REST API / SSE| CHAT
+    N -->|REST API / SSE| VOICE
 ```
 
 ### Alur Percakapan RAG:
