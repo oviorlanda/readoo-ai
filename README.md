@@ -253,11 +253,6 @@ Kontribusi sangat disambut! Ikuti langkah-langkah berikut:
    ```
 5. **Buat Pull Request** ke branch `main`
 
-### Panduan Gaya Kode:
-- **Backend**: Ikuti pola `Controller → Service → Repository`. Gunakan tipe Python hints.
-- **Frontend**: Ikuti pola `Component → Store → Service`. PascalCase untuk komponen.
-- **Commit Message**: Gunakan format Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`).
-
 ---
 
 ## 📄 License
